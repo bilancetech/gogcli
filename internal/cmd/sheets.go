@@ -476,9 +476,11 @@ func (c *SheetsCreateCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	names := splitCSV(c.Sheets)
+	parent := normalizeGoogleID(strings.TrimSpace(c.Parent))
 	if err := dryRunExit(ctx, flags, "sheets.create", map[string]any{
 		"title":  title,
 		"sheets": names,
+		"parent": parent,
 	}); err != nil {
 		return err
 	}
@@ -515,31 +517,51 @@ func (c *SheetsCreateCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	// Move to parent folder if specified
-	if c.Parent != "" {
-		var parentDriveSvc *drive.Service
-		parentDriveSvc, err = newDriveService(ctx, account)
-		if err != nil {
-			return err
+	movedToParent := false
+	moveError := ""
+	if parent != "" {
+		parentDriveSvc, driveErr := newDriveService(ctx, account)
+		if driveErr == nil {
+			var meta *drive.File
+			meta, driveErr = parentDriveSvc.Files.Get(resp.SpreadsheetId).
+				SupportsAllDrives(true).
+				Fields("id, parents").
+				Context(ctx).
+				Do()
+			if driveErr == nil {
+				moveCall := parentDriveSvc.Files.Update(resp.SpreadsheetId, &drive.File{}).
+					AddParents(parent).
+					SupportsAllDrives(true).
+					Context(ctx)
+				if len(meta.Parents) > 0 {
+					moveCall = moveCall.RemoveParents(strings.Join(meta.Parents, ","))
+				}
+				_, driveErr = moveCall.Do()
+			}
 		}
-
-		_, err = parentDriveSvc.Files.Update(resp.SpreadsheetId, &drive.File{}).
-			AddParents(c.Parent).
-			SupportsAllDrives(true).
-			Context(ctx).
-			Do()
-		if err != nil {
-			u.Out().Errorf("Failed to move spreadsheet to folder: %v", err)
-			u.Out().Println("Spreadsheet created in Drive root. Move to desired folder if needed.")
+		if driveErr != nil {
+			moveError = driveErr.Error()
+			u.Err().Errorf("failed to move spreadsheet to folder: %v", driveErr)
+			u.Err().Println("Spreadsheet created in Drive root. Move to desired folder if needed.")
+		} else {
+			movedToParent = true
 		}
 	}
 
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
+		payload := map[string]any{
 			"spreadsheetId":  resp.SpreadsheetId,
 			"title":          resp.Properties.Title,
 			"spreadsheetUrl": resp.SpreadsheetUrl,
-		})
+		}
+		if parent != "" {
+			payload["parent"] = parent
+			payload["movedToParent"] = movedToParent
+			if moveError != "" {
+				payload["moveError"] = moveError
+			}
+		}
+		return outfmt.WriteJSON(ctx, os.Stdout, payload)
 	}
 
 	u.Out().Printf("Created spreadsheet: %s", resp.Properties.Title)
