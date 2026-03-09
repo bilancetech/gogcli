@@ -703,17 +703,13 @@ func (c *CalendarUpdateCmd) buildUpdateOutOfOfficeProperties(declineProvided boo
 }
 
 func applyUpdateScope(ctx context.Context, svc *calendar.Service, calendarID, eventID, scope, originalStartTime string, patch *calendar.Event) (string, []string, error) {
-	targetEventID := eventID
-	var parentRecurrence []string
-	recurringEventID := eventID
+	resolution, err := resolveRecurringScopeResolution(ctx, svc, calendarID, eventID, scope, originalStartTime)
+	if err != nil {
+		return "", nil, err
+	}
 
 	if scope == scopeFuture {
-		parentID, recurrence, err := resolveRecurringParentEvent(ctx, svc, calendarID, eventID)
-		if err != nil {
-			return "", nil, err
-		}
-		recurringEventID = parentID
-		parentRecurrence = recurrence
+		parentRecurrence := resolution.ParentRecurrence
 		recurrenceOverride := len(patch.Recurrence) > 0
 		if !recurrenceOverride {
 			for _, field := range patch.ForceSendFields {
@@ -728,22 +724,7 @@ func applyUpdateScope(ctx context.Context, svc *calendar.Service, calendarID, ev
 		}
 	}
 
-	if scope == scopeSingle || scope == scopeFuture {
-		if scope == scopeSingle {
-			var err error
-			recurringEventID, err = resolveRecurringSeriesID(ctx, svc, calendarID, eventID)
-			if err != nil {
-				return "", nil, err
-			}
-		}
-		instanceID, err := resolveRecurringInstanceID(ctx, svc, calendarID, recurringEventID, originalStartTime)
-		if err != nil {
-			return "", nil, err
-		}
-		targetEventID = instanceID
-	}
-
-	return targetEventID, parentRecurrence, nil
+	return resolution.TargetEventID, resolution.ParentRecurrence, nil
 }
 
 func truncateParentRecurrence(ctx context.Context, svc *calendar.Service, calendarID, eventID string, parentRecurrence []string, originalStartTime, sendUpdates string) error {
@@ -827,44 +808,20 @@ func (c *CalendarDeleteCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	targetEventID := eventID
-	var parentRecurrence []string
-	parentEventID := eventID
-	if scope == scopeFuture {
-		parentID, recurrence, resolveErr := resolveRecurringParentEvent(ctx, mutation.svc, mutation.calendarID, eventID)
-		if resolveErr != nil {
-			return resolveErr
-		}
-		parentEventID = parentID
-		parentRecurrence = recurrence
-	}
-	if scope == scopeSingle || scope == scopeFuture {
-		recurringEventID := eventID
-		if scope == scopeSingle {
-			recurringEventID, err = resolveRecurringSeriesID(ctx, mutation.svc, mutation.calendarID, eventID)
-			if err != nil {
-				return err
-			}
-		}
-		if scope == scopeFuture {
-			recurringEventID = parentEventID
-		}
-		instanceID, resolveErr := resolveRecurringInstanceID(ctx, mutation.svc, mutation.calendarID, recurringEventID, c.OriginalStartTime)
-		if resolveErr != nil {
-			return resolveErr
-		}
-		targetEventID = instanceID
+	resolution, err := resolveRecurringScopeResolution(ctx, mutation.svc, mutation.calendarID, eventID, scope, c.OriginalStartTime)
+	if err != nil {
+		return err
 	}
 
-	if err := mutation.deleteEvent(ctx, targetEventID, sendUpdates); err != nil {
+	if err := mutation.deleteEvent(ctx, resolution.TargetEventID, sendUpdates); err != nil {
 		return err
 	}
 	if scope == scopeFuture {
-		truncated, truncateErr := truncateRecurrence(parentRecurrence, c.OriginalStartTime)
+		truncated, truncateErr := truncateRecurrence(resolution.ParentRecurrence, c.OriginalStartTime)
 		if truncateErr != nil {
 			return truncateErr
 		}
-		_, patchErr := mutation.patchEvent(ctx, parentEventID, &calendar.Event{Recurrence: truncated}, sendUpdates)
+		_, patchErr := mutation.patchEvent(ctx, resolution.ParentEventID, &calendar.Event{Recurrence: truncated}, sendUpdates)
 		if patchErr != nil {
 			return patchErr
 		}
@@ -872,6 +829,6 @@ func (c *CalendarDeleteCmd) Run(ctx context.Context, flags *RootFlags) error {
 	return writeResult(ctx, u,
 		kv("deleted", true),
 		kv("calendarId", mutation.calendarID),
-		kv("eventId", targetEventID),
+		kv("eventId", resolution.TargetEventID),
 	)
 }
