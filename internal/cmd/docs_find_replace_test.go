@@ -288,6 +288,96 @@ func TestDocsFindReplace_MarkdownMode(t *testing.T) {
 	}
 }
 
+func TestDocsFindReplace_MarkdownMode_WithTabID(t *testing.T) {
+	origDocs := newDocsService
+	t.Cleanup(func() { newDocsService = origDocs })
+
+	var batchCalls []docs.BatchUpdateDocumentRequest
+	var includeTabsCalls int
+	docSvc, cleanup := newDocsServiceForTest(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/documents/"):
+			if strings.Contains(r.URL.RawQuery, "includeTabsContent=true") {
+				includeTabsCalls++
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"documentId": "doc1",
+				"revisionId": "rev-tab-1",
+				"tabs": []any{
+					map[string]any{
+						"tabProperties": map[string]any{"tabId": "t.notes", "title": "Notes", "index": 0},
+						"documentTab": map[string]any{
+							"body": map[string]any{
+								"content": []any{
+									map[string]any{
+										"startIndex":   0,
+										"endIndex":     1,
+										"sectionBreak": map[string]any{"sectionStyle": map[string]any{}},
+									},
+									map[string]any{
+										"startIndex": 1,
+										"endIndex":   30,
+										"paragraph": map[string]any{
+											"elements": []any{
+												map[string]any{
+													"startIndex": 1,
+													"endIndex":   30,
+													"textRun": map[string]any{
+														"content": "Hello {{placeholder}} world",
+													},
+												},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			})
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, ":batchUpdate"):
+			var req docs.BatchUpdateDocumentRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatalf("decode batchUpdate: %v", err)
+			}
+			batchCalls = append(batchCalls, req)
+			_ = json.NewEncoder(w).Encode(map[string]any{"documentId": "doc1"})
+		default:
+			http.NotFound(w, r)
+		}
+	})
+	defer cleanup()
+	newDocsService = func(context.Context, string) (*docs.Service, error) { return docSvc, nil }
+
+	flags := &RootFlags{Account: "a@b.com"}
+	cmd := &DocsFindReplaceCmd{}
+	err := runKong(t, cmd, []string{
+		"doc1", "{{placeholder}}", "**bold text**",
+		"--format", "markdown", "--first", "--tab-id", "t.notes",
+	}, newDocsCmdContext(t), flags)
+	if err != nil {
+		t.Fatalf("docs find-replace --format markdown --first --tab-id: %v", err)
+	}
+
+	if includeTabsCalls == 0 {
+		t.Fatal("expected tab-aware document GET")
+	}
+	if len(batchCalls) == 0 {
+		t.Fatal("expected at least one batchUpdate call")
+	}
+	reqs := batchCalls[0].Requests
+	if len(reqs) < 2 {
+		t.Fatalf("expected at least 2 requests (delete + insert), got %d", len(reqs))
+	}
+	if got := reqs[0].DeleteContentRange; got == nil || got.Range == nil || got.Range.TabId != "t.notes" {
+		t.Fatalf("expected tab-aware delete request, got %#v", reqs[0].DeleteContentRange)
+	}
+	if got := reqs[1].InsertText; got == nil || got.Location == nil || got.Location.TabId != "t.notes" {
+		t.Fatalf("expected tab-aware insert request, got %#v", reqs[1].InsertText)
+	}
+}
+
 func TestDocsFindReplace_MarkdownNoMatch(t *testing.T) {
 	origDocs := newDocsService
 	t.Cleanup(func() { newDocsService = origDocs })

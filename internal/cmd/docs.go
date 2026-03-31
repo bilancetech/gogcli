@@ -203,7 +203,7 @@ func (c *DocsCreateCmd) insertImages(ctx context.Context, account string, docID 
 	if err != nil {
 		return err
 	}
-	return insertImagesIntoDocs(ctx, account, svc, docID, images, c.File)
+	return insertImagesIntoDocs(ctx, account, svc, docID, images, c.File, "")
 }
 
 type DocsCopyCmd struct {
