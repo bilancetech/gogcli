@@ -164,20 +164,21 @@ func MarkdownToDocsRequests(elements []MarkdownElement, baseIndex int64) ([]*doc
 				fmt.Printf("[LIST] Content: %q -> stripped=%q styles=%d\n", el.Content, strippedContent, len(styles))
 			}
 
-			// Add list item with prefix
-			prefix := "• "
-			if el.Type == MDNumberedList {
-				prefix = "1. "
-			}
-			prefixLen := utf16Len(prefix)
-			plainText.WriteString(prefix)
+			// Add list item text followed by newline. Bullets/numbering are applied
+			// with paragraph-level Docs requests instead of literal text prefixes.
 			plainText.WriteString(strippedContent)
 			plainText.WriteString("\n")
-			charOffset += prefixLen + utf16Len(strippedContent+"\n")
+			charOffset += utf16Len(strippedContent + "\n")
 
-			// Apply inline text styles (offset by prefix length)
+			paragraphFormats := []string{"bullet"}
+			if el.Type == MDNumberedList {
+				paragraphFormats = []string{"numbered"}
+			}
+			requests = append(requests, buildParagraphStyleRequests(paragraphFormats, startOffset, charOffset)...)
+
+			// Apply inline text styles directly to the inserted content.
 			for _, style := range styles {
-				textStyleReq := buildTextStyleRequest(style, startOffset+prefixLen)
+				textStyleReq := buildTextStyleRequest(style, startOffset)
 				if textStyleReq != nil {
 					requests = append(requests, textStyleReq)
 				}
