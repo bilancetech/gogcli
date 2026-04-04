@@ -45,6 +45,15 @@ func TestHelpSnapshot_DocsUpdate(t *testing.T) {
 	)
 }
 
+func TestHelpSnapshot_Docs(t *testing.T) {
+	out := captureHelpOutput(t, "docs", "--help")
+	requireHelpContains(t, out,
+		"\n  list-tabs",
+		"\n  add-tab",
+		"\n  write",
+	)
+}
+
 func TestHelpSnapshot_Sheets(t *testing.T) {
 	out := captureHelpOutput(t, "sheets", "--help")
 	requireHelpContains(t, out,

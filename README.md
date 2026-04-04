@@ -930,6 +930,8 @@ gog docs export <docId> --format pdf --out ./doc.pdf
 gog docs list-tabs <docId>
 gog docs cat <docId> --tab "Notes"
 gog docs cat <docId> --all-tabs
+gog docs add-tab <docId> "Notes"
+gog docs add-tab <docId> "Sub-note" --parent-tab-id t.notes --index 0
 gog docs update <docId> --text "Append this later"
 gog docs update <docId> --text "Only in this tab" --tab-id t.notes
 gog docs update <docId> --file ./insert.txt --index 25 --pageless
