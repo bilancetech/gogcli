@@ -2,8 +2,19 @@
 
 ## Unreleased
 
+## 0.12.1 - 2026-04-08
+
 ### Added
-- Gmail: add `gmail autoreply` to reply once to matching messages, label the thread for dedupe, and optionally archive/mark read. Includes docs and regression coverage for skip/reply flows.
+- Gmail: add `gmail autoreply` to reply once to matching messages, label the thread for dedupe, and optionally archive or mark threads read.
+- Docs: allow Markdown `docs find-replace` replacements to target a specific tab via `--tab-id`.
+- Docs: add `docs add-tab` (aliases `create-tab`, `new-tab`) to create document tabs, including nested tabs, explicit indices, and emoji icons.
+
+### Fixed
+- Docs: preserve real bullet and numbered list structure when importing Markdown into Google Docs.
+- Gmail: make filter creation idempotent so reruns can reuse an existing matching filter instead of failing.
+
+### Changed
+- CI: move worker setup to Corepack-based `pnpm` bootstrapping and refresh the GitHub-hosted runner configuration used by the release pipeline.
 
 ## 0.12.0 - 2026-03-09
 

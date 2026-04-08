@@ -1,12 +1,11 @@
 ---
-summary: "Release checklist for gogcli (GitHub release + Homebrew tap)"
+summary: "Release checklist for gogcli (Bilance GitHub releases)"
 ---
 
 # Releasing `gogcli`
 
-This playbook mirrors the Homebrew + GitHub flow used in `../camsnap`.
-
-Always do **all** steps below (CI + changelog + tag + GitHub release artifacts + tap update + Homebrew sanity install). No partial releases.
+This playbook is for the Bilance fork and treats GitHub release assets as the source of truth for installs.
+Always do **all** steps below: CI, changelog, tag, GitHub release assets, and release verification.
 
 Shortcut scripts (preferred, keep notes non-empty):
 ```sh
@@ -15,15 +14,13 @@ scripts/verify-release.sh X.Y.Z
 ```
 
 Assumptions:
-- Repo: `steipete/gogcli`
-- Tap repo: `../homebrew-tap` (tap: `steipete/tap`)
-- Homebrew formula name: `gogcli` (installs the `gog` binary)
+- Repo: `bilancetech/gogcli`
+- GitHub Releases are the install source for Bilance tooling.
 
 ## 0) Prereqs
 - Clean working tree on `main`.
 - Go toolchain installed (Go version comes from `go.mod`).
 - `make` works locally.
-- Access to the tap repo (e.g. `steipete/homebrew-tap`).
 
 ## 1) Verify build is green
 ```sh
@@ -58,7 +55,7 @@ The tag push triggers `.github/workflows/release.yml` (GoReleaser). Ensure it co
 
 ```sh
 gh run list -L 5 --workflow release.yml
-gh release view vX.Y.Z
+gh release view vX.Y.Z --repo bilancetech/gogcli
 ```
 
 Ensure GitHub release notes are not empty (mirror the changelog section).
@@ -68,42 +65,28 @@ If the workflow needs a rerun:
 gh workflow run release.yml -f tag=vX.Y.Z
 ```
 
-## 5) Update (or add) the Homebrew formula
-In the tap repo (assumed sibling at `../homebrew-tap`), create/update `Formula/gogcli.rb`.
+## 5) Sanity-check GitHub release assets
+Verify that the expected platform assets exist and that `checksums.txt` includes all shipped archives:
 
-Recommended formula shape (build-from-source, no binary assets needed):
-- `version "X.Y.Z"`
-- `url "https://github.com/steipete/gogcli/archive/refs/tags/vX.Y.Z.tar.gz"`
-- `sha256 "<sha256>"`
-- `depends_on "go" => :build`
-- Build:
-  - `system "go", "build", *std_go_args(ldflags: "-s -w"), "./cmd/gog"`
-
-Compute the SHA256 for the tag tarball:
 ```sh
-curl -L -o /tmp/gogcli.tar.gz https://github.com/steipete/gogcli/archive/refs/tags/vX.Y.Z.tar.gz
-shasum -a 256 /tmp/gogcli.tar.gz
+gh release download vX.Y.Z --repo bilancetech/gogcli -p checksums.txt -D /tmp/gogcli-release
+cat /tmp/gogcli-release/checksums.txt
 ```
 
-Commit + push in the tap repo:
-```sh
-cd ../homebrew-tap
-git add Formula/gogcli.rb
-git commit -m "gogcli vX.Y.Z"
-git push origin main
-```
+Expected archives:
+- `gogcli_X.Y.Z_darwin_amd64.tar.gz`
+- `gogcli_X.Y.Z_darwin_arm64.tar.gz`
+- `gogcli_X.Y.Z_linux_amd64.tar.gz`
+- `gogcli_X.Y.Z_linux_arm64.tar.gz`
+- `gogcli_X.Y.Z_windows_amd64.zip`
+- `gogcli_X.Y.Z_windows_arm64.zip`
 
-## 6) Sanity-check install from tap
-```sh
-brew update
-brew uninstall gogcli || true
-brew untap steipete/tap || true
-brew tap steipete/tap
-brew install steipete/tap/gogcli
-brew test steipete/tap/gogcli
+Optional smoke test on the current machine:
 
-gog --help
+```sh
+gh release download vX.Y.Z --repo bilancetech/gogcli -p 'gogcli_X.Y.Z_*' -D /tmp/gogcli-release
 ```
 
 ## Notes
-- `gog --version` / `gog version` should report the release version post-install.
+- `gog --version` / `gog version` should report the release version from the tag.
+- Bilance monorepo setup installs from GitHub Releases, so a release without assets is incomplete.
