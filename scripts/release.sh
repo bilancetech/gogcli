@@ -10,6 +10,8 @@ fi
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$root"
 
+repo="bilancetech/gogcli"
+
 branch="$(git rev-parse --abbrev-ref HEAD)"
 if [[ "$branch" != "main" ]]; then
   echo "expected branch main (got $branch)" >&2
@@ -51,10 +53,10 @@ else
   git push origin main --tags
 fi
 
-if gh release view "v$version" >/dev/null 2>&1; then
-  gh release edit "v$version" --notes-file "$notes_file"
+if gh release view "v$version" -R "$repo" >/dev/null 2>&1; then
+  gh release edit "v$version" -R "$repo" --notes-file "$notes_file"
 else
-  gh release create "v$version" --notes-file "$notes_file"
+  gh release create "v$version" -R "$repo" --notes-file "$notes_file"
 fi
 
 rm -f "$notes_file"

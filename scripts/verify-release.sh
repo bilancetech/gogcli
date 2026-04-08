@@ -10,6 +10,8 @@ fi
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$root"
 
+repo="bilancetech/gogcli"
+
 changelog="CHANGELOG.md"
 if ! rg -q "^## ${version} - " "$changelog"; then
   echo "missing changelog section for $version" >&2
@@ -32,19 +34,19 @@ if [[ ! -s "$notes_file" ]]; then
   exit 2
 fi
 
-release_body="$(gh release view "v$version" --json body -q .body)"
+release_body="$(gh release view "v$version" -R "$repo" --json body -q .body)"
 if [[ -z "$release_body" ]]; then
   echo "GitHub release notes empty for v$version" >&2
   exit 2
 fi
 
-assets_count="$(gh release view "v$version" --json assets -q '.assets | length')"
+assets_count="$(gh release view "v$version" -R "$repo" --json assets -q '.assets | length')"
 if [[ "$assets_count" -eq 0 ]]; then
   echo "no GitHub release assets for v$version" >&2
   exit 2
 fi
 
-ci_ok="$(gh run list -L 1 --workflow ci --branch main --json conclusion -q '.[0].conclusion')"
+ci_ok="$(gh run list -R "$repo" -L 1 --workflow ci --branch main --json conclusion -q '.[0].conclusion')"
 if [[ "$ci_ok" != "success" ]]; then
   echo "CI not green for main" >&2
   exit 2
@@ -53,7 +55,7 @@ fi
 make ci
 
 tmp_assets_dir="$(mktemp -d -t gogcli-release-assets)"
-gh release download "v$version" -p checksums.txt -D "$tmp_assets_dir" >/dev/null
+gh release download "v$version" -R "$repo" -p checksums.txt -D "$tmp_assets_dir" >/dev/null
 checksums_file="$tmp_assets_dir/checksums.txt"
 
 sha_for_asset() {
