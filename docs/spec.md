@@ -190,7 +190,7 @@ Flag aliases:
 - `gog drive search <text> [--raw-query] [--max N] [--page TOKEN] [--[no-]all-drives]`
 - `gog drive get <fileId>`
 - `gog drive download <fileId> [--out PATH] [--format F]` (`--format` only applies to Google Workspace files; `--format md` exports a Google Doc as Markdown)
-- `gog drive upload <localPath> [--name N] [--parent ID] [--convert] [--convert-to doc|sheet|slides] [--keep-frontmatter]` (Markdown → Google Doc with `--convert` or `--convert-to doc`: leading `---`/`---` frontmatter is stripped before upload unless `--keep-frontmatter`; delimiter-based, not a full YAML parse)
+- `gog drive upload <localPath> [--name N] [--parent ID] [--convert] [--convert-to doc|sheet|slides] [--keep-frontmatter]` (Markdown → Google Doc with `--convert` or `--convert-to doc`: leading `---`/`---` frontmatter is stripped before upload unless `--keep-frontmatter`; delimiter-based, not a full YAML parse; large non-JSON uploads print progress to stderr)
 - `gog drive mkdir <name> [--parent ID]`
 - `gog drive delete <fileId> [--permanent]`
 - `gog drive move <fileId> --parent ID`
@@ -207,8 +207,8 @@ Flag aliases:
 - `gog calendar events <calendarId> [--cal ID_OR_NAME] [--calendars CSV] [--all] [--from RFC3339] [--to RFC3339] [--max N] [--page TOKEN] [--query Q] [--weekday]`
 - `gog calendar event|get <calendarId> <eventId>`
 - `GOG_CALENDAR_WEEKDAY=1` defaults `--weekday` for `gog calendar events`
-- `gog calendar create <calendarId> --summary S --from DT --to DT [--description D] [--location L] [--attendees a@b.com,c@d.com] [--all-day] [--event-type TYPE]`
-- `gog calendar update <calendarId> <eventId> [--summary S] [--from DT] [--to DT] [--description D] [--location L] [--attendees ...] [--add-attendee ...] [--all-day] [--event-type TYPE]`
+- `gog calendar create <calendarId> --summary S --from DT --to DT [--start-timezone TZ] [--end-timezone TZ] [--description D] [--location L] [--attendees a@b.com,c@d.com] [--all-day] [--event-type TYPE]`
+- `gog calendar update <calendarId> <eventId> [--summary S] [--from DT] [--to DT] [--start-timezone TZ] [--end-timezone TZ] [--description D] [--location L] [--attendees ...] [--add-attendee ...] [--all-day] [--event-type TYPE]`
 - `gog calendar delete <calendarId> <eventId>`
 - `gog calendar freebusy [calendarIds] [--cal ID_OR_NAME] [--calendars CSV] [--all] --from RFC3339 --to RFC3339`
 - `gog calendar conflicts [--cal ID_OR_NAME] [--calendars CSV] [--all] [--from RFC3339|date|relative] [--to RFC3339|date|relative] [--today|--week|--days N]`

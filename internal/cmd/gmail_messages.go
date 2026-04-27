@@ -51,17 +51,10 @@ func (c *GmailMessagesSearchCmd) Run(ctx context.Context, flags *RootFlags) erro
 	}
 
 	fetch := func(pageToken string) ([]*gmail.Message, string, error) {
-		call := svc.Users.Messages.List("me").
-			Q(query).
-			MaxResults(c.Max).
+		opts := newGmailSearchRequestOptions(query, c.Max, pageToken)
+		call := applyGmailMessageListOptions(svc.Users.Messages.List("me"), opts).
 			Fields("messages(id,threadId),nextPageToken").
 			Context(ctx)
-		if labelIDs := gmailQuerySystemLabelIDs(query); len(labelIDs) > 0 {
-			call = call.LabelIds(labelIDs...)
-		}
-		if strings.TrimSpace(pageToken) != "" {
-			call = call.PageToken(pageToken)
-		}
 		resp, callErr := call.Do()
 		if callErr != nil {
 			return nil, "", callErr
@@ -69,32 +62,17 @@ func (c *GmailMessagesSearchCmd) Run(ctx context.Context, flags *RootFlags) erro
 		return resp.Messages, resp.NextPageToken, nil
 	}
 
-	var messages []*gmail.Message
-	nextPageToken := ""
-	if c.All {
-		all, collectErr := collectAllPages(c.Page, fetch)
-		if collectErr != nil {
-			return collectErr
-		}
-		messages = all
-	} else {
-		messagesPage, pageToken, fetchErr := fetch(c.Page)
-		if fetchErr != nil {
-			return fetchErr
-		}
-		messages = messagesPage
-		nextPageToken = pageToken
+	messages, nextPageToken, err := loadPagedItems(c.Page, c.All, fetch)
+	if err != nil {
+		return err
 	}
 
 	if len(messages) == 0 {
 		if outfmt.IsJSON(ctx) {
-			if writeErr := outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
+			return writePagedJSONResult(ctx, map[string]any{
 				"messages":      []messageItem{},
 				"nextPageToken": nextPageToken,
-			}); writeErr != nil {
-				return writeErr
-			}
-			return failEmptyExit(c.FailEmpty)
+			}, 0, c.FailEmpty)
 		}
 		u.Err().Println("No results")
 		return failEmptyExit(c.FailEmpty)
@@ -116,16 +94,10 @@ func (c *GmailMessagesSearchCmd) Run(ctx context.Context, flags *RootFlags) erro
 	}
 
 	if outfmt.IsJSON(ctx) {
-		if writeErr := outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
+		return writePagedJSONResult(ctx, map[string]any{
 			"messages":      items,
 			"nextPageToken": nextPageToken,
-		}); writeErr != nil {
-			return writeErr
-		}
-		if len(items) == 0 {
-			return failEmptyExit(c.FailEmpty)
-		}
-		return nil
+		}, len(items), c.FailEmpty)
 	}
 
 	if len(items) == 0 {

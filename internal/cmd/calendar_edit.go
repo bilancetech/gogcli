@@ -16,6 +16,8 @@ type CalendarCreateCmd struct {
 	Summary               string   `name:"summary" help:"Event summary/title"`
 	From                  string   `name:"from" help:"Start time (RFC3339)"`
 	To                    string   `name:"to" help:"End time (RFC3339)"`
+	StartTimezone         string   `name:"start-timezone" aliases:"from-timezone" help:"IANA timezone metadata for --from (e.g., Europe/Rome)"`
+	EndTimezone           string   `name:"end-timezone" aliases:"to-timezone" help:"IANA timezone metadata for --to (e.g., America/New_York)"`
 	Description           string   `name:"description" help:"Description"`
 	Location              string   `name:"location" help:"Location"`
 	Attendees             string   `name:"attendees" help:"Comma-separated attendee emails"`
@@ -204,6 +206,8 @@ type CalendarUpdateCmd struct {
 	Summary               string   `name:"summary" help:"New summary/title (set empty to clear)"`
 	From                  string   `name:"from" help:"New start time (RFC3339; set empty to clear)"`
 	To                    string   `name:"to" help:"New end time (RFC3339; set empty to clear)"`
+	StartTimezone         string   `name:"start-timezone" aliases:"from-timezone" help:"IANA timezone metadata for --from (e.g., Europe/Rome)"`
+	EndTimezone           string   `name:"end-timezone" aliases:"to-timezone" help:"IANA timezone metadata for --to (e.g., America/New_York)"`
 	Description           string   `name:"description" help:"New description (set empty to clear)"`
 	Location              string   `name:"location" help:"New location (set empty to clear)"`
 	Attendees             string   `name:"attendees" help:"Comma-separated attendee emails (replaces all; set empty to clear)"`
@@ -444,12 +448,21 @@ func resolveUpdateAllDay(value string, allDay bool, eventType string) (bool, err
 
 func (c *CalendarUpdateCmd) applyTimeFields(kctx *kong.Context, patch *calendar.Event, eventType string) (bool, error) {
 	changed := false
+	if flagProvided(kctx, "start-timezone") && !flagProvided(kctx, "from") {
+		return false, usage("--start-timezone requires --from")
+	}
+	if flagProvided(kctx, "end-timezone") && !flagProvided(kctx, "to") {
+		return false, usage("--end-timezone requires --to")
+	}
 	if flagProvided(kctx, "from") {
 		allDay, err := resolveUpdateAllDay(c.From, c.AllDay, eventType)
 		if err != nil {
 			return false, err
 		}
-		patch.Start = buildEventDateTime(c.From, allDay)
+		patch.Start, err = buildEventDateTimeWithTimezone(c.From, allDay, c.StartTimezone, "--start-timezone")
+		if err != nil {
+			return false, err
+		}
 		changed = true
 	}
 	if flagProvided(kctx, "to") {
@@ -457,7 +470,10 @@ func (c *CalendarUpdateCmd) applyTimeFields(kctx *kong.Context, patch *calendar.
 		if err != nil {
 			return false, err
 		}
-		patch.End = buildEventDateTime(c.To, allDay)
+		patch.End, err = buildEventDateTimeWithTimezone(c.To, allDay, c.EndTimezone, "--end-timezone")
+		if err != nil {
+			return false, err
+		}
 		changed = true
 	}
 	return changed, nil

@@ -32,6 +32,33 @@ func TestExtractTimezone(t *testing.T) {
 	}
 }
 
+func TestBuildEventDateTimeWithTimezone(t *testing.T) {
+	edt, err := buildEventDateTimeWithTimezone(
+		"2026-08-13T13:40:00+02:00",
+		false,
+		"Europe/Rome",
+		"--start-timezone",
+	)
+	if err != nil {
+		t.Fatalf("buildEventDateTimeWithTimezone: %v", err)
+	}
+	if edt.DateTime != "2026-08-13T13:40:00+02:00" {
+		t.Fatalf("unexpected datetime: %#v", edt)
+	}
+	if edt.TimeZone != "Europe/Rome" {
+		t.Fatalf("expected Europe/Rome timezone, got %#v", edt)
+	}
+}
+
+func TestBuildEventDateTimeWithTimezoneRejectsInvalidInput(t *testing.T) {
+	if _, err := buildEventDateTimeWithTimezone("2026-08-13", true, "Europe/Rome", "--start-timezone"); err == nil {
+		t.Fatalf("expected all-day timezone error")
+	}
+	if _, err := buildEventDateTimeWithTimezone("2026-08-13T13:40:00+02:00", false, "Nope/Zone", "--start-timezone"); err == nil {
+		t.Fatalf("expected invalid timezone error")
+	}
+}
+
 func TestBuildAttachments(t *testing.T) {
 	if got := buildAttachments(nil); got != nil {
 		t.Fatalf("expected nil for empty input")

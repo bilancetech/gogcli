@@ -28,6 +28,22 @@ func buildEventDateTime(value string, allDay bool) *calendar.EventDateTime {
 	return edt
 }
 
+func buildEventDateTimeWithTimezone(value string, allDay bool, timezone, flagName string) (*calendar.EventDateTime, error) {
+	edt := buildEventDateTime(value, allDay)
+	timezone = strings.TrimSpace(timezone)
+	if timezone == "" {
+		return edt, nil
+	}
+	if allDay {
+		return nil, usagef("%s cannot be used with all-day dates", flagName)
+	}
+	if _, err := loadTimezoneLocation(timezone); err != nil {
+		return nil, fmt.Errorf("invalid %s %q: %w", flagName, timezone, err)
+	}
+	edt.TimeZone = timezone
+	return edt, nil
+}
+
 func etcGMTForOffsetSeconds(offset int) (string, bool) {
 	if offset == 0 || offset%3600 != 0 {
 		return "", false

@@ -874,6 +874,11 @@ gog calendar create <calendarId> \
   --attendees "alice@example.com,bob@example.com" \
   --location "Zoom"
 
+gog calendar create <calendarId> \
+  --summary "Flight" \
+  --from 2026-08-13T13:40:00+02:00 --start-timezone Europe/Rome \
+  --to 2026-08-13T17:00:00-04:00 --end-timezone America/New_York
+
 gog calendar update <calendarId> <eventId> \
   --summary "Updated Meeting" \
   --from 2025-01-15T11:00:00Z \
@@ -984,6 +989,8 @@ gog drive upload ./report.docx --convert
 gog drive upload ./chart.png --convert-to sheet
 gog drive upload ./report.docx --convert --name report.docx
 gog drive upload ./notes.md --convert                              # Markdown → Google Doc (or use --convert-to doc)
+
+# Large non-JSON uploads print progress on stderr.
 gog drive download <fileId> --out ./downloaded.bin
 gog drive download <fileId> --format pdf --out ./exported.pdf     # Google Workspace files only
 gog drive download <fileId> --format docx --out ./doc.docx

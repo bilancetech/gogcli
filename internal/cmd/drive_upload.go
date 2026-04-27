@@ -27,6 +27,7 @@ type driveUploadOptions struct {
 	isExplicitName      bool
 	keepRevisionForever bool
 	convert             bool
+	size                int64
 }
 
 func (c *DriveUploadCmd) Run(ctx context.Context, flags *RootFlags) error {
@@ -35,11 +36,13 @@ func (c *DriveUploadCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	media, err := openDriveUploadMedia(opts, c.KeepFrontmatter)
+	media, size, err := openDriveUploadMedia(opts, c.KeepFrontmatter)
 	if err != nil {
 		return err
 	}
 	defer media.Close()
+	opts.size = size
+	uploadReader := driveUploadReader(ctx, media, opts)
 
 	_, svc, err := requireDriveService(ctx, flags)
 	if err != nil {
@@ -47,9 +50,9 @@ func (c *DriveUploadCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	if opts.replaceFileID == "" {
-		return runDriveCreateUpload(ctx, svc, media, opts)
+		return runDriveCreateUpload(ctx, svc, uploadReader, opts)
 	}
-	return runDriveReplaceUpload(ctx, svc, media, opts)
+	return runDriveReplaceUpload(ctx, svc, uploadReader, opts)
 }
 
 func prepareDriveUpload(c *DriveUploadCmd) (driveUploadOptions, error) {
@@ -99,24 +102,30 @@ func driveUploadShouldStripMarkdownFrontmatter(opts driveUploadOptions, keepFron
 	return !keepFrontmatter && opts.convert && opts.mimeType == mimeTextMarkdown
 }
 
-func openDriveUploadMedia(opts driveUploadOptions, keepFrontmatter bool) (io.ReadCloser, error) {
+func openDriveUploadMedia(opts driveUploadOptions, keepFrontmatter bool) (io.ReadCloser, int64, error) {
 	file, err := os.Open(opts.localPath)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	if !driveUploadShouldStripMarkdownFrontmatter(opts, keepFrontmatter) {
-		return file, nil
+		info, statErr := file.Stat()
+		if statErr != nil {
+			_ = file.Close()
+			return nil, 0, statErr
+		}
+		return file, info.Size(), nil
 	}
 
 	data, readErr := io.ReadAll(file)
 	closeErr := file.Close()
 	if readErr != nil {
-		return nil, readErr
+		return nil, 0, readErr
 	}
 	if closeErr != nil {
-		return nil, closeErr
+		return nil, 0, closeErr
 	}
-	return io.NopCloser(bytes.NewReader(stripYAMLFrontmatter(data))), nil
+	stripped := stripYAMLFrontmatter(data)
+	return io.NopCloser(bytes.NewReader(stripped)), int64(len(stripped)), nil
 }
 
 func runDriveCreateUpload(ctx context.Context, svc *drive.Service, file io.Reader, opts driveUploadOptions) error {

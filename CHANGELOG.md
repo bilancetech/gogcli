@@ -8,13 +8,17 @@
 - Backup: extend `--services all` with Drive permissions/comments/revisions, Calendar ACL/settings/colors, contact groups, Cloud Identity groups, Workspace Admin Directory users/groups/members, Keep notes, and local Gmail message caching for resumable full-mailbox fetches.
 - Backup: bound individual Drive content exports with `--drive-content-timeout` so one stuck Google export records an encrypted error row instead of blocking the full backup.
 - Backup: add Gmail message-list checkpoints, streaming shard construction, and stderr progress counters so full-mailbox backups can resume cleanly after interruption without keeping every raw message in RAM.
+- Calendar: add `--start-timezone` / `--end-timezone` to `calendar create` and `calendar update` for preserving named IANA event timezones when RFC3339 inputs only carry numeric offsets. (#422)
 
 ### Fixed
 - Calendar: display `calendar events` times and JSON local fields in the calendar timezone instead of preserving arbitrary event offsets. (#493)
+- CLI: show direct Google Cloud API enablement links and matching `auth add --services ...` hints when Google returns API-not-enabled errors.
 - Gmail: apply Gmail system-label filters for searches like `in:spam is:unread` so thread, message, and batch message searches do not return read spam. (#449)
 - Gmail: build outbound `Date` headers with the configured timezone so replies do not inherit a wrong host-local offset. (#514, #472) — thanks @dinakars777.
 - Gmail: preserve renewed watch expiration fields when a long-running `gmail watch serve` process records push delivery state after `gmail watch renew` runs separately. (#526)
 - Gmail: auto-fill draft reply subjects from the original message when `gmail drafts create --reply-to-message-id` omits `--subject`. (#488) — thanks @jbowerbir.
+- Gmail: reuse the shared paginated list runner for thread and message search so `--all`, `--page`, text, and JSON output stay consistent.
+- Drive: print large upload progress to stderr while keeping JSON output parseable. (#529)
 - Drive: include `hasThumbnail` and `thumbnailLink` in `drive ls`, `drive search`, and `drive get` JSON responses. (#486) — thanks @gtapps.
 - Secrets: time out macOS Keychain read/write/list operations with a clear recovery hint instead of hanging indefinitely when a permission prompt cannot surface. (#515, #513) — thanks @sardoru.
 - Secrets: encode file-backend key names so stored tokens work on Windows, while still reading/removing legacy raw entries. (#527, #502) — thanks @solomonneas.

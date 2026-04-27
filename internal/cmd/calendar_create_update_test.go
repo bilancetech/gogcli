@@ -183,6 +183,29 @@ func TestCalendarCreateCmd_RecurringOffsetTimezoneFallback(t *testing.T) {
 	}
 }
 
+func TestCalendarCreateCmd_ExplicitTimezones(t *testing.T) {
+	plan, err := buildCalendarCreatePlan(&CalendarCreateCmd{
+		CalendarID:    "primary",
+		Summary:       "Flight",
+		From:          "2026-08-13T13:40:00+02:00",
+		To:            "2026-08-13T17:00:00-04:00",
+		StartTimezone: "Europe/Rome",
+		EndTimezone:   "America/New_York",
+		SendUpdates:   "none",
+		Transparency:  "opaque",
+		Visibility:    "default",
+	})
+	if err != nil {
+		t.Fatalf("buildCalendarCreatePlan: %v", err)
+	}
+	if plan.Event.Start == nil || plan.Event.Start.TimeZone != "Europe/Rome" {
+		t.Fatalf("expected start timezone Europe/Rome, got %#v", plan.Event.Start)
+	}
+	if plan.Event.End == nil || plan.Event.End.TimeZone != "America/New_York" {
+		t.Fatalf("expected end timezone America/New_York, got %#v", plan.Event.End)
+	}
+}
+
 func TestCalendarUpdateCmd_RecurrenceFillsMissingTimezone(t *testing.T) {
 	origNew := newCalendarService
 	t.Cleanup(func() { newCalendarService = origNew })
