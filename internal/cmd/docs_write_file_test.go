@@ -177,8 +177,8 @@ func TestDocsWriteUpdate_FileInputErrors(t *testing.T) {
 	}
 
 	err = runKong(t, &DocsWriteCmd{}, []string{"doc1", "--text", "hello", "--markdown"}, ctx, flags)
-	if err == nil || !strings.Contains(err.Error(), "--markdown requires --replace") {
-		t.Fatalf("expected markdown replace error, got: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "--markdown requires --replace or --append") {
+		t.Fatalf("expected markdown mode error, got: %v", err)
 	}
 
 	err = runKong(t, &DocsWriteCmd{}, []string{"doc1", "--text", "hello", "--append", "--replace"}, ctx, flags)

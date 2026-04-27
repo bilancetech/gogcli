@@ -15,6 +15,7 @@
 ### Fixed
 - Calendar: display `calendar events` times and JSON local fields in the calendar timezone instead of preserving arbitrary event offsets. (#493)
 - Docs: deprecate editing-command `--tab-id` in favor of `--tab`, and resolve tab titles to canonical tab IDs before mutations. (#533) — thanks @johnbenjaminlewis.
+- Docs: convert Markdown formatting for `docs write --append --markdown` instead of appending raw Markdown syntax. (#530, #272) — thanks @eric-x-liu.
 - CLI: show direct Google Cloud API enablement links and matching `auth add --services ...` hints when Google returns API-not-enabled errors.
 - Gmail: apply Gmail system-label filters for searches like `in:spam is:unread` so thread, message, and batch message searches do not return read spam. (#449)
 - Gmail: build outbound `Date` headers with the configured timezone so replies do not inherit a wrong host-local offset. (#514, #472) — thanks @dinakars777.

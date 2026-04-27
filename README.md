@@ -1040,6 +1040,7 @@ gog docs write <docId> --text "Fresh content"
 gog docs write <docId> --text "Rewrite one tab" --tab "Notes"
 gog docs write <docId> --file ./body.txt --append --pageless
 gog docs write <docId> --file ./body.md --replace --markdown
+gog docs write <docId> --file ./body.md --append --markdown
 gog docs find-replace <docId> "old" "new"
 gog docs find-replace <docId> "old" "new" --tab "Notes"
 
