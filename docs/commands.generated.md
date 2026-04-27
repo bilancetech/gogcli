@@ -49,6 +49,8 @@ Generated from `gog schema --json`.
 - `gog auth tokens import <inPath>` - Import a refresh token file into keyring (contains secrets)
 - `gog auth tokens list` - List stored tokens (by key only)
 - `gog backup <command> [flags]` - Encrypted Google account backups
+- `gog backup cat <shard> [flags]` - Decrypt one backup shard to stdout
+- `gog backup export [flags]` - Write a local plaintext export
 - `gog backup gmail <command>` - Gmail backup operations
 - `gog backup gmail push [flags]` - Export Gmail into encrypted backup shards
 - `gog backup init [flags]` - Initialize encrypted backup config and repository

@@ -1,6 +1,9 @@
 package cmd
 
 import (
+	"encoding/base64"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -88,6 +91,77 @@ func TestMergeBackupSnapshotsKeepsCountsAndShardOrder(t *testing.T) {
 	}
 }
 
+func TestDecodeGmailRawAcceptsBase64URLVariants(t *testing.T) {
+	payload := []byte("Subject: Hello\r\n\r\nBody")
+	raw := base64.RawURLEncoding.EncodeToString(payload)
+	got, err := decodeGmailRaw(raw)
+	if err != nil {
+		t.Fatalf("decodeGmailRaw raw: %v", err)
+	}
+	if string(got) != string(payload) {
+		t.Fatalf("raw decoded = %q, want %q", got, payload)
+	}
+
+	padded := base64.URLEncoding.EncodeToString(payload)
+	got, err = decodeGmailRaw(padded)
+	if err != nil {
+		t.Fatalf("decodeGmailRaw padded: %v", err)
+	}
+	if string(got) != string(payload) {
+		t.Fatalf("padded decoded = %q, want %q", got, payload)
+	}
+}
+
+func TestExportGmailMessagesWritesReadableEMLAndIndex(t *testing.T) {
+	outDir := t.TempDir()
+	payload := []byte("Subject: Hello\r\nFrom: a@example.com\r\n\r\nBody")
+	message := gmailBackupMessage{
+		ID:           "msg/one",
+		ThreadID:     "thread-1",
+		InternalDate: mustUnixMilli(t, "2026-04-02T10:00:00Z"),
+		LabelIDs:     []string{"INBOX"},
+		Raw:          base64.RawURLEncoding.EncodeToString(payload),
+	}
+	shard, err := backup.NewJSONLShard("gmail", "messages", "acct/hash", "data/gmail/acct/messages/2026/04/part-0001.jsonl.gz.age", []gmailBackupMessage{message})
+	if err != nil {
+		t.Fatalf("NewJSONLShard: %v", err)
+	}
+
+	files, count, err := exportGmailMessages(outDir, shard)
+	if err != nil {
+		t.Fatalf("exportGmailMessages: %v", err)
+	}
+	if files != 2 || count != 1 {
+		t.Fatalf("files,count = %d,%d want 2,1", files, count)
+	}
+
+	emlRel := backupExportMessagePath("acct_hash", message)
+	eml, err := os.ReadFile(filepath.Join(outDir, filepath.FromSlash(emlRel)))
+	if err != nil {
+		t.Fatalf("read eml: %v", err)
+	}
+	if string(eml) != string(payload) {
+		t.Fatalf("eml = %q, want %q", eml, payload)
+	}
+	index := readText(t, filepath.Join(outDir, "gmail", "acct_hash", "messages", "index.jsonl"))
+	if !strings.Contains(index, `"id":"msg/one"`) || !strings.Contains(index, `"eml":"`+emlRel+`"`) {
+		t.Fatalf("index missing expected fields: %s", index)
+	}
+}
+
+func TestEnsureExportOutsideRepoRejectsNestedPlaintext(t *testing.T) {
+	repo := filepath.Join(t.TempDir(), "repo")
+	if err := os.MkdirAll(filepath.Join(repo, "data"), 0o700); err != nil {
+		t.Fatalf("mkdir repo: %v", err)
+	}
+	if err := ensureExportOutsideRepo(filepath.Join(repo, "plaintext"), repo); err == nil {
+		t.Fatal("expected nested export dir to be rejected")
+	}
+	if err := ensureExportOutsideRepo(filepath.Join(filepath.Dir(repo), "export"), repo); err != nil {
+		t.Fatalf("outside export rejected: %v", err)
+	}
+}
+
 func mustUnixMilli(t *testing.T, value string) int64 {
 	t.Helper()
 	parsed, err := time.Parse(time.RFC3339, value)
@@ -95,4 +169,13 @@ func mustUnixMilli(t *testing.T, value string) int64 {
 		t.Fatalf("parse time %q: %v", value, err)
 	}
 	return parsed.UnixMilli()
+}
+
+func readText(t *testing.T, path string) string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	return string(data)
 }

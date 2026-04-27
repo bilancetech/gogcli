@@ -728,6 +728,8 @@ gog backup init --repo ~/Projects/backup-gog --remote https://github.com/steipet
 gog backup push --services gmail --account you@gmail.com
 gog backup status
 gog backup verify
+gog backup cat data/gmail/<account-hash>/labels.jsonl.gz.age --pretty
+gog backup export --out ~/Documents/gog-backup-export
 ```
 
 For a bounded first run:
@@ -740,6 +742,12 @@ Backups use age-encrypted JSONL gzip shards under `data/`. `gog` stores the
 private age identity locally at `~/.gog/age.key`; GitHub only receives public
 `age1...` recipients, `manifest.json`, and encrypted `*.jsonl.gz.age` payloads.
 The private `AGE-SECRET-KEY-...` value must stay local or in a password manager.
+
+Use `gog backup cat` to decrypt one shard as JSONL, or `gog backup export` to
+write a local plaintext copy. The export writes Gmail messages as `.eml` files,
+plus `gmail/<account-hash>/messages/index.jsonl` and pretty `labels.json`.
+That export is intentionally unencrypted; keep it out of Git, shared folders,
+and cloud sync unless that is intentional.
 
 `manifest.json` is intentionally cleartext for cheap status and verification.
 It exposes metadata: export time, service names, account hashes, shard paths,

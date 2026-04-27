@@ -58,6 +58,53 @@ func TestPushSnapshotAndVerify(t *testing.T) {
 	}
 }
 
+func TestCatAndDecryptSnapshotVerifyPlaintext(t *testing.T) {
+	ctx, repo, config, _ := initTestBackup(t)
+	shardPath := "data/gmail/acct/messages/2026/04/part-0001.jsonl.gz.age"
+	pushSingleShard(t, ctx, config, mustGmailMessageShard(t, shardPath, []map[string]string{{
+		"id":  "m1",
+		"raw": "plain marker",
+	}}))
+
+	cat, err := Cat(ctx, Options{ConfigPath: config}, shardPath)
+	if err != nil {
+		t.Fatalf("Cat: %v", err)
+	}
+	if cat.Path != shardPath || cat.Service != "gmail" || cat.Kind != "messages" || !strings.Contains(string(cat.Plaintext), "plain marker") {
+		t.Fatalf("unexpected cat shard: %+v plaintext=%q", cat, cat.Plaintext)
+	}
+
+	absPath := filepath.Join(repo, filepath.FromSlash(shardPath))
+	catAbs, err := Cat(ctx, Options{ConfigPath: config}, absPath)
+	if err != nil {
+		t.Fatalf("Cat absolute: %v", err)
+	}
+	if string(catAbs.Plaintext) != string(cat.Plaintext) {
+		t.Fatalf("absolute Cat plaintext mismatch")
+	}
+
+	manifest, gotRepo, shards, err := DecryptSnapshot(ctx, Options{ConfigPath: config})
+	if err != nil {
+		t.Fatalf("DecryptSnapshot: %v", err)
+	}
+	if gotRepo != repo || len(manifest.Shards) != 1 || len(shards) != 1 || string(shards[0].Plaintext) != string(cat.Plaintext) {
+		t.Fatalf("unexpected decrypt snapshot repo=%s manifest=%+v shards=%+v", gotRepo, manifest, shards)
+	}
+}
+
+func TestCatRejectsShardOutsideManifest(t *testing.T) {
+	ctx, _, config, _ := initTestBackup(t)
+	pushSingleShard(t, ctx, config, mustGmailMessageShard(t, "data/gmail/acct/messages/2026/04/part-0001.jsonl.gz.age", []map[string]string{{"id": "m1"}}))
+
+	for _, ref := range []string{"../data/gmail/acct/messages/2026/04/part-0001.jsonl.gz.age", "data/gmail/acct/messages/2026/05/part-0001.jsonl.gz.age"} {
+		t.Run(ref, func(t *testing.T) {
+			if _, err := Cat(ctx, Options{ConfigPath: config}, ref); err == nil {
+				t.Fatal("expected Cat to reject missing or escaping shard")
+			}
+		})
+	}
+}
+
 func TestIdentityAndConfigArePrivate(t *testing.T) {
 	_, _, config, identity := initTestBackup(t)
 

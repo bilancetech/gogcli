@@ -24,12 +24,16 @@ type BackupCmd struct {
 	Push   BackupPushCmd   `cmd:"" name:"push" help:"Export services into encrypted backup shards"`
 	Status BackupStatusCmd `cmd:"" name:"status" help:"Inspect backup manifest without decrypting shards"`
 	Verify BackupVerifyCmd `cmd:"" name:"verify" help:"Decrypt and verify all backup shards"`
+	Cat    BackupCatCmd    `cmd:"" name:"cat" help:"Decrypt one backup shard to stdout"`
+	Export BackupExportCmd `cmd:"" name:"export" help:"Write a local plaintext export"`
 	Gmail  BackupGmailCmd  `cmd:"" name:"gmail" help:"Gmail backup operations"`
 }
 
 type BackupGmailCmd struct {
 	Push BackupGmailPushCmd `cmd:"" name:"push" help:"Export Gmail into encrypted backup shards"`
 }
+
+const backupServiceGmail = "gmail"
 
 type backupFlags struct {
 	Config     string   `name:"config" help:"Backup config path" default:""`
@@ -48,6 +52,23 @@ func (f backupFlags) options() backup.Options {
 		Identity:   f.Identity,
 		Recipients: f.Recipients,
 		Push:       !f.NoPush,
+	}
+}
+
+type backupReadFlags struct {
+	Config   string `name:"config" help:"Backup config path" default:""`
+	Repo     string `name:"repo" help:"Local backup repository path"`
+	Remote   string `name:"remote" help:"Backup Git remote URL"`
+	Identity string `name:"identity" help:"Local age identity path"`
+}
+
+func (f backupReadFlags) options() backup.Options {
+	return backup.Options{
+		ConfigPath: f.Config,
+		Repo:       f.Repo,
+		Remote:     f.Remote,
+		Identity:   f.Identity,
+		Push:       false,
 	}
 }
 
@@ -93,7 +114,7 @@ func (c *BackupPushCmd) Run(ctx context.Context, flags *RootFlags) error {
 	var snapshots []backup.Snapshot
 	for _, service := range services {
 		switch strings.ToLower(strings.TrimSpace(service)) {
-		case "gmail":
+		case backupServiceGmail:
 			snapshot, err := buildGmailBackupSnapshot(ctx, flags, gmailBackupOptions{
 				Query:            c.Query,
 				Max:              c.Max,
@@ -233,7 +254,7 @@ func buildGmailBackupSnapshot(ctx context.Context, flags *RootFlags, opts gmailB
 		return backup.Snapshot{}, err
 	}
 	shards := make([]backup.PlainShard, 0, 1)
-	labelShard, err := backup.NewJSONLShard("gmail", "labels", accountHash, fmt.Sprintf("data/gmail/%s/labels.jsonl.gz.age", accountHash), labels)
+	labelShard, err := backup.NewJSONLShard(backupServiceGmail, "labels", accountHash, fmt.Sprintf("data/gmail/%s/labels.jsonl.gz.age", accountHash), labels)
 	if err != nil {
 		return backup.Snapshot{}, err
 	}
@@ -244,7 +265,7 @@ func buildGmailBackupSnapshot(ctx context.Context, flags *RootFlags, opts gmailB
 	}
 	shards = append(shards, messageShards...)
 	return backup.Snapshot{
-		Services: []string{"gmail"},
+		Services: []string{backupServiceGmail},
 		Accounts: []string{accountHash},
 		Counts: map[string]int{
 			"gmail.labels":   len(labels),
@@ -422,7 +443,7 @@ func buildGmailMessageShards(accountHash string, messages []gmailBackupMessage, 
 				end = len(values)
 			}
 			rel := fmt.Sprintf("data/gmail/%s/messages/%s/part-%04d.jsonl.gz.age", accountHash, key, part)
-			shard, err := backup.NewJSONLShard("gmail", "messages", accountHash, rel, values[start:end])
+			shard, err := backup.NewJSONLShard(backupServiceGmail, "messages", accountHash, rel, values[start:end])
 			if err != nil {
 				return nil, err
 			}

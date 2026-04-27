@@ -48,6 +48,18 @@ Decrypt every shard and verify hashes and row counts:
 gog backup verify
 ```
 
+Decrypt one shard to stdout:
+
+```bash
+gog backup cat data/gmail/<account-hash>/labels.jsonl.gz.age --pretty
+```
+
+Write an unencrypted local copy for easy reading on the Mac:
+
+```bash
+gog backup export --out ~/Documents/gog-backup-export
+```
+
 Use `--no-push` on `init` or `push` to commit locally without pushing to the
 remote.
 
@@ -75,6 +87,23 @@ counts, encrypted byte sizes, and plaintext hashes used for verification. It
 does not contain email subjects, senders, recipients, bodies, raw message IDs,
 or labels.
 
+Plaintext export directory:
+
+```text
+README.md
+manifest.json
+gmail/<account-hash>/labels.json
+gmail/<account-hash>/messages/index.jsonl
+gmail/<account-hash>/messages/YYYY/MM/<timestamp>-<message-id>.eml
+raw/<service>/...
+```
+
+`gog backup export` decrypts and verifies the manifest-backed shards before
+writing files. Gmail messages become `.eml` files that open in Mail and other
+mail clients. The export is not encrypted; do not place it inside the backup
+Git repository, and keep it out of synced/shared folders unless that is
+intentional.
+
 ## Encryption
 
 Backups use the Go `filippo.io/age` library with X25519 age identities. There
@@ -98,6 +127,8 @@ For each shard, `gog backup push`:
 
 `gog backup verify` decrypts each shard with the local age identity, gunzips it,
 checks the plaintext SHA-256 hash from the manifest, and verifies row counts.
+`gog backup cat` and `gog backup export` use the same verification path before
+returning plaintext.
 
 ## Security Boundary
 
