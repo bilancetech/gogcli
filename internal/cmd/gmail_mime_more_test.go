@@ -55,9 +55,9 @@ func TestBuildRFC822_DateHeaderUsesConfiguredTimezone(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadMessage: %v", err)
 	}
-	date := msg.Header.Get("Date")
-	if !strings.HasSuffix(date, "+0000") {
-		t.Fatalf("expected UTC Date header, got %q", date)
+	dateHeader := msg.Header.Get("Date")
+	if !strings.HasSuffix(dateHeader, "+0000") {
+		t.Fatalf("expected UTC Date header, got %q", dateHeader)
 	}
 }
 
