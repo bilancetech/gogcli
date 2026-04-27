@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -57,7 +58,7 @@ func TestPushSnapshotAndVerify(t *testing.T) {
 	}
 }
 
-func TestInitCreatesPrivateIdentityAndConfig(t *testing.T) {
+func TestIdentityAndConfigArePrivate(t *testing.T) {
 	_, _, config, identity := initTestBackup(t)
 
 	for _, path := range []string{config, identity} {
@@ -65,7 +66,8 @@ func TestInitCreatesPrivateIdentityAndConfig(t *testing.T) {
 		if err != nil {
 			t.Fatalf("stat %s: %v", path, err)
 		}
-		if got := info.Mode().Perm(); got != 0o600 {
+		if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
+			got := info.Mode().Perm()
 			t.Fatalf("%s mode = %v, want 0600", path, got)
 		}
 	}
@@ -297,14 +299,26 @@ func initTestBackup(t *testing.T) (context.Context, string, string, string) {
 	identity := filepath.Join(dir, "age.key")
 	config := filepath.Join(dir, "backup.json")
 
-	cfg, recipient, err := Init(ctx, Options{
-		ConfigPath: config,
+	recipient, err := EnsureIdentity(identity)
+	if err != nil {
+		t.Fatalf("EnsureIdentity: %v", err)
+	}
+	cfg := Config{
 		Repo:       repo,
 		Identity:   identity,
-		Push:       false,
-	})
-	if err != nil {
-		t.Fatalf("Init: %v", err)
+		Recipients: []string{recipient},
+	}
+	if err := SaveConfig(config, cfg); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+	if err := ensureRepo(ctx, cfg); err != nil {
+		t.Fatalf("ensureRepo: %v", err)
+	}
+	if err := writeBackupReadme(repo); err != nil {
+		t.Fatalf("writeBackupReadme: %v", err)
+	}
+	if _, err := commitAndPush(ctx, cfg, "docs: describe encrypted gog backup", false); err != nil {
+		t.Fatalf("commitAndPush: %v", err)
 	}
 	if cfg.Repo != repo || !strings.HasPrefix(recipient, "age1") {
 		t.Fatalf("unexpected init cfg=%+v recipient=%q", cfg, recipient)
