@@ -1489,7 +1489,7 @@ THREAD_ID           SUBJECT                           FROM                  DATE
 16d1c2b3a4e5f6d7    Project update                    bob@example.com       2025-01-08
 ```
 
-Message-level search (one row per email; add `--include-body` to fetch/decode bodies, or `--full` for untruncated text bodies):
+Message-level search (one row per email; add `--include-body` to fetch/decode bodies, `--body-format html` to prefer HTML bodies, or `--full` for untruncated text output):
 
 ```bash
 $ gog gmail messages search 'newer_than:7d' --max 3
@@ -1497,6 +1497,10 @@ ID                  THREAD             SUBJECT                           FROM   
 18f1a2b3c4d5e6f7    9e8d7c6b5a4f3e2d    Meeting notes                     alice@example.com     2025-01-10
 17e1d2c3b4a5f6e7    9e8d7c6b5a4f3e2d    Invoice #12345                    billing@vendor.com    2025-01-09
 16d1c2b3a4e5f6d7    7f6e5d4c3b2a1908    Project update                    bob@example.com       2025-01-08
+```
+
+```bash
+$ gog gmail messages search 'from:newsletter@example.com' --include-body --body-format html --json
 ```
 
 ### JSON

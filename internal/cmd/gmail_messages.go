@@ -14,6 +14,11 @@ import (
 	"github.com/steipete/gogcli/internal/ui"
 )
 
+const (
+	gmailMessageBodyFormatText = "text"
+	gmailMessageBodyFormatHTML = "html"
+)
+
 type GmailMessagesCmd struct {
 	Search GmailMessagesSearchCmd `cmd:"" name:"search" aliases:"find,query,ls,list" group:"Read" help:"Search messages using Gmail query syntax"`
 	Modify GmailMessagesModifyCmd `cmd:"" name:"modify" aliases:"update,edit,set" group:"Organize" help:"Modify labels on a single message"`
@@ -28,7 +33,7 @@ type GmailMessagesSearchCmd struct {
 	Timezone    string   `name:"timezone" short:"z" help:"Output timezone (IANA name, e.g. America/New_York, UTC). Default: local"`
 	Local       bool     `name:"local" help:"Use local timezone (default behavior, useful to override --timezone)"`
 	IncludeBody bool     `name:"include-body" help:"Include decoded message body (JSON is full; text output is truncated)"`
-	BodyFormat  string   `name:"body-format" help:"Body format preference: text (default) or html" default:"text" enum:"text,html"`
+	BodyFormat  string   `name:"body-format" help:"Body format preference when --include-body is set: text or html" default:"text" enum:"text,html"`
 	Full        bool     `name:"full" help:"Show full message bodies without truncation (implies --include-body)"`
 }
 
@@ -201,8 +206,8 @@ type messageItem struct {
 	Body     string   `json:"body,omitempty"`
 }
 
-func fetchMessageDetails(ctx context.Context, svc *gmail.Service, messages []*gmail.Message, idToName map[string]string, loc *time.Location, includeBody bool, bodyFormat ...string) ([]messageItem, error) {
-	preferHTML := len(bodyFormat) > 0 && bodyFormat[0] == "html"
+func fetchMessageDetails(ctx context.Context, svc *gmail.Service, messages []*gmail.Message, idToName map[string]string, loc *time.Location, includeBody bool, bodyFormat string) ([]messageItem, error) {
+	preferHTML := bodyFormat == gmailMessageBodyFormatHTML
 	if len(messages) == 0 {
 		return nil, nil
 	}

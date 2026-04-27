@@ -10,6 +10,7 @@
 - Backup: add Gmail message-list checkpoints, streaming shard construction, and stderr progress counters so full-mailbox backups can resume cleanly after interruption without keeping every raw message in RAM.
 - Calendar: add `--start-timezone` / `--end-timezone` to `calendar create` and `calendar update` for preserving named IANA event timezones when RFC3339 inputs only carry numeric offsets. (#422)
 - Drive: add `drive search --drive` and `--parent` for scoping search to a shared drive or folder. (#525) — thanks @LeanSheng.
+- Gmail: add `gmail messages search --body-format html` for returning HTML message bodies when `--include-body` is used. (#520) — thanks @alexknowshtml.
 
 ### Fixed
 - Calendar: display `calendar events` times and JSON local fields in the calendar timezone instead of preserving arbitrary event offsets. (#493)

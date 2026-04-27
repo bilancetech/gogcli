@@ -135,6 +135,12 @@ func TestExecute_GmailMessagesSearch_JSON_IncludeBody(t *testing.T) {
 								"data": encodeBase64URL("Total =E2=82=AC99.99"),
 							},
 						},
+						{
+							"mimeType": "text/html",
+							"body": map[string]any{
+								"data": encodeBase64URL("<strong>Total €99.99</strong>"),
+							},
+						},
 					},
 				},
 			})
@@ -173,6 +179,20 @@ func TestExecute_GmailMessagesSearch_JSON_IncludeBody(t *testing.T) {
 	})
 	if !strings.Contains(out, "Total €99.99") {
 		t.Fatalf("expected decoded body, got: %q", out)
+	}
+	if strings.Contains(out, "<strong>") {
+		t.Fatalf("expected text body by default, got: %q", out)
+	}
+
+	htmlOut := captureStdout(t, func() {
+		_ = captureStderr(t, func() {
+			if err := Execute([]string{"--json", "--account", "a@b.com", "gmail", "messages", "search", "from:example.com", "--include-body", "--body-format", "html"}); err != nil {
+				t.Fatalf("Execute: %v", err)
+			}
+		})
+	})
+	if !strings.Contains(htmlOut, "<strong>Total €99.99</strong>") {
+		t.Fatalf("expected html body, got: %q", htmlOut)
 	}
 }
 
