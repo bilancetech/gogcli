@@ -64,6 +64,11 @@ type gmailBackupListState struct {
 	Updated          time.Time `json:"updated"`
 }
 
+type gmailBackupFetchResult struct {
+	cache bool
+	err   error
+}
+
 func buildGmailBackupSnapshot(ctx context.Context, flags *RootFlags, opts gmailBackupOptions) (backup.Snapshot, error) {
 	if opts.ShardMaxRows <= 0 {
 		opts.ShardMaxRows = 1000
@@ -212,66 +217,39 @@ func fetchGmailBackupMessagesDirect(ctx context.Context, svc *gmail.Service, ids
 func ensureGmailBackupMessageCache(ctx context.Context, svc *gmail.Service, opts gmailBackupOptions, ids []string) error {
 	gmailBackupProgressf(ctx, "backup gmail fetch\tqueued=%d", len(ids))
 	const maxConcurrency = 2
-	sem := make(chan struct{}, maxConcurrency)
-	type result struct {
-		cache bool
-		err   error
-	}
-	results := make(chan result, len(ids))
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	jobs := make(chan string)
+	results := make(chan gmailBackupFetchResult, maxConcurrency)
 	var wg sync.WaitGroup
-	for _, id := range ids {
+	for range maxConcurrency {
 		wg.Add(1)
-		go func(messageID string) {
+		go func() {
 			defer wg.Done()
-			select {
-			case sem <- struct{}{}:
-				defer func() { <-sem }()
-			case <-ctx.Done():
-				results <- result{err: ctx.Err()}
-				return
-			}
-			if opts.CacheMessages && !opts.RefreshCache {
-				_, ok, err := readGmailBackupMessageCache(opts.AccountHash, messageID)
-				if err != nil {
-					results <- result{err: err}
+			for {
+				select {
+				case <-ctx.Done():
 					return
-				}
-				if ok {
-					results <- result{cache: true}
-					return
+				case messageID, ok := <-jobs:
+					if !ok {
+						return
+					}
+					results <- fetchGmailBackupMessageCacheResult(ctx, svc, opts, messageID)
 				}
 			}
-			msg, err := svc.Users.Messages.Get("me", messageID).
-				Format(gmailFormatRaw).
-				Fields("id,threadId,historyId,internalDate,labelIds,sizeEstimate,raw").
-				Context(ctx).
-				Do()
-			if err != nil {
-				results <- result{err: fmt.Errorf("gmail message %s: %w", messageID, err)}
-				return
-			}
-			if strings.TrimSpace(msg.Raw) == "" {
-				results <- result{err: fmt.Errorf("gmail message %s returned empty raw payload", messageID)}
-				return
-			}
-			backupMsg := gmailBackupMessage{
-				ID:           msg.Id,
-				ThreadID:     msg.ThreadId,
-				HistoryID:    formatHistoryID(msg.HistoryId),
-				InternalDate: msg.InternalDate,
-				LabelIDs:     append([]string(nil), msg.LabelIds...),
-				SizeEstimate: msg.SizeEstimate,
-				Raw:          msg.Raw,
-			}
-			if opts.CacheMessages {
-				if err := writeGmailBackupMessageCache(opts.AccountHash, backupMsg); err != nil {
-					results <- result{err: err}
-					return
-				}
-			}
-			results <- result{}
-		}(id)
+		}()
 	}
+	go func() {
+		defer close(jobs)
+		for _, id := range ids {
+			select {
+			case <-ctx.Done():
+				return
+			case jobs <- id:
+			}
+		}
+	}()
 	go func() {
 		wg.Wait()
 		close(results)
@@ -281,8 +259,12 @@ func ensureGmailBackupMessageCache(ctx context.Context, svc *gmail.Service, opts
 	cacheHits := 0
 	fetched := 0
 	for res := range results {
-		if res.err != nil && firstErr == nil {
-			firstErr = res.err
+		if res.err != nil {
+			if firstErr == nil {
+				firstErr = res.err
+				cancel()
+			}
+			continue
 		}
 		done++
 		if res.cache {
@@ -300,7 +282,51 @@ func ensureGmailBackupMessageCache(ctx context.Context, svc *gmail.Service, opts
 	if firstErr != nil {
 		return firstErr
 	}
+	if done != len(ids) {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		return fmt.Errorf("gmail backup fetch stopped after %d/%d messages", done, len(ids))
+	}
 	return nil
+}
+
+func fetchGmailBackupMessageCacheResult(ctx context.Context, svc *gmail.Service, opts gmailBackupOptions, messageID string) gmailBackupFetchResult {
+	if opts.CacheMessages && !opts.RefreshCache {
+		_, ok, err := readGmailBackupMessageCache(opts.AccountHash, messageID)
+		if err != nil {
+			return gmailBackupFetchResult{err: err}
+		}
+		if ok {
+			return gmailBackupFetchResult{cache: true}
+		}
+	}
+	msg, err := svc.Users.Messages.Get("me", messageID).
+		Format(gmailFormatRaw).
+		Fields("id,threadId,historyId,internalDate,labelIds,sizeEstimate,raw").
+		Context(ctx).
+		Do()
+	if err != nil {
+		return gmailBackupFetchResult{err: fmt.Errorf("gmail message %s: %w", messageID, err)}
+	}
+	if strings.TrimSpace(msg.Raw) == "" {
+		return gmailBackupFetchResult{err: fmt.Errorf("gmail message %s returned empty raw payload", messageID)}
+	}
+	backupMsg := gmailBackupMessage{
+		ID:           msg.Id,
+		ThreadID:     msg.ThreadId,
+		HistoryID:    formatHistoryID(msg.HistoryId),
+		InternalDate: msg.InternalDate,
+		LabelIDs:     append([]string(nil), msg.LabelIds...),
+		SizeEstimate: msg.SizeEstimate,
+		Raw:          msg.Raw,
+	}
+	if opts.CacheMessages {
+		if err := writeGmailBackupMessageCache(opts.AccountHash, backupMsg); err != nil {
+			return gmailBackupFetchResult{err: err}
+		}
+	}
+	return gmailBackupFetchResult{}
 }
 
 func readGmailBackupMessageCache(accountHash, messageID string) (gmailBackupMessage, bool, error) {

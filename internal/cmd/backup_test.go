@@ -5,12 +5,14 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -298,6 +300,32 @@ func TestListGmailBackupMessageIDsMarksMaxLimitedRunComplete(t *testing.T) {
 	}
 	if !ok || !state.Complete || state.PageToken != "" {
 		t.Fatalf("state = %#v ok=%t", state, ok)
+	}
+}
+
+func TestEnsureGmailBackupMessageCacheStopsOnFirstFetchError(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	var requests atomic.Int32
+	svc, cleanup := newGmailServiceForTest(t, func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		http.Error(w, `{"error":{"code":401,"message":"invalid credentials"}}`, http.StatusUnauthorized)
+	})
+	defer cleanup()
+
+	ids := make([]string, 100)
+	for i := range ids {
+		ids[i] = fmt.Sprintf("msg-%03d", i)
+	}
+	err := ensureGmailBackupMessageCache(context.Background(), svc, gmailBackupOptions{
+		AccountHash:      "accthash",
+		CacheMessages:    true,
+		IncludeSpamTrash: true,
+	}, ids)
+	if err == nil || !strings.Contains(err.Error(), "gmail message msg-") {
+		t.Fatalf("expected message fetch error, got %v", err)
+	}
+	if got := requests.Load(); got > 4 {
+		t.Fatalf("requests = %d, want fail-fast bounded requests", got)
 	}
 }
 
