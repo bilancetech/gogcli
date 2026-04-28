@@ -336,6 +336,8 @@ Generated from `gog schema --json`.
 - `gog gmail (mail,email) thread (threads,read) get (info,show) <threadId> [flags]` - Get a thread with all messages (optionally download attachments)
 - `gog gmail (mail,email) thread (threads,read) modify (update,edit,set) <threadId> [flags]` - Modify labels on all messages in a thread
 - `gog gmail (mail,email) track <command>` - Email open tracking
+- `gog gmail (mail,email) track key <command>` - Manage tracking encryption keys
+- `gog gmail (mail,email) track key rotate [flags]` - Rotate tracking encryption key
 - `gog gmail (mail,email) track opens [<tracking-id>] [flags]` - Query email opens
 - `gog gmail (mail,email) track setup [flags]` - Set up email tracking (deploy Cloudflare Worker)
 - `gog gmail (mail,email) track status` - Show tracking configuration status

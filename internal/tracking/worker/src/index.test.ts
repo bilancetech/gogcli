@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import worker from './index';
-import { encrypt, importKey } from './crypto';
+import { encrypt, encryptWithVersion, importKey } from './crypto';
 
 const testKey = 'MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDE=';
 
@@ -117,6 +117,11 @@ async function encryptedBlob(): Promise<string> {
   return encrypt({ r: 'to@example.com', s: 'abcdef', t: Math.floor(Date.now() / 1000) - 10 }, key);
 }
 
+async function encryptedVersionedBlob(): Promise<string> {
+  const key = await importKey(testKey);
+  return encryptWithVersion({ r: 'to@example.com', s: 'abcdef', t: Math.floor(Date.now() / 1000) - 10 }, key, 2);
+}
+
 describe('tracking worker pixel rate limiting', () => {
   it('deduplicates repeated opens for the same tracking id, ip, and user agent', async () => {
     const db = new FakeD1();
@@ -127,6 +132,23 @@ describe('tracking worker pixel rate limiting', () => {
     await worker.fetch(await pixelRequest(blob), env);
 
     expect(db.rows).toHaveLength(1);
+  });
+
+  it('records versioned tracking pixels with versioned Worker keys', async () => {
+    const db = new FakeD1();
+    const env = {
+      DB: db as unknown as D1Database,
+      TRACKING_KEY: 'wrong-current-key',
+      TRACKING_KEY_V2: testKey,
+      TRACKING_CURRENT_KEY_VERSION: '2',
+      ADMIN_KEY: 'admin',
+    };
+    const blob = await encryptedVersionedBlob();
+
+    await worker.fetch(await pixelRequest(blob), env);
+
+    expect(db.rows).toHaveLength(1);
+    expect(db.rows[0].recipient).toBe('to@example.com');
   });
 
   it('silently skips inserts after the per-IP hourly cap', async () => {

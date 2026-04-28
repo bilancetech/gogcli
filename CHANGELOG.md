@@ -25,6 +25,7 @@
 ### Fixed
 - Backup: split Gmail checkpoint commits by row count and plaintext byte size so large messages stay below GitHub's blob limit.
 - Auth: keep `gog auth list` and `gog auth tokens list` useful when one file-keyring token cannot be decrypted; unreadable entries are now reported instead of aborting the whole listing. (#377)
+- Email tracking: add versioned tracking-key rotation so new pixels use the current key while old tracking ids keep decrypting through prior keys. (#293)
 - Email tracking: deduplicate repeated pixel opens and cap recorded opens per IP per hour to reduce D1 abuse from replay or high-volume requests. (#294)
 - Email tracking: add daily Worker retention cleanup for open rows older than 90 days and cap admin `/opens` responses at 500 rows. (#292)
 - Email tracking: make `gmail track setup --deploy` reusable with existing D1 databases and valid temporary Wrangler configs.

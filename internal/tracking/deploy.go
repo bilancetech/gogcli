@@ -18,11 +18,13 @@ type DeployLogger interface {
 }
 
 type DeployOptions struct {
-	WorkerDir    string
-	WorkerName   string
-	DatabaseName string
-	TrackingKey  string
-	AdminKey     string
+	WorkerDir              string
+	WorkerName             string
+	DatabaseName           string
+	TrackingKey            string
+	TrackingKeys           map[int]string
+	TrackingCurrentVersion int
+	AdminKey               string
 }
 
 var (
@@ -96,7 +98,22 @@ func DeployWorker(ctx context.Context, logger DeployLogger, opts DeployOptions) 
 		return "", runErr
 	}
 
-	if runErr := runWranglerCommand(ctx, workerDir, strings.NewReader(opts.TrackingKey+"\n"), "secret", "put", "TRACKING_KEY", "--name", opts.WorkerName); runErr != nil {
+	trackingKeys, currentVersion, err := normalizeDeployTrackingKeys(opts)
+	if err != nil {
+		return "", err
+	}
+
+	if runErr := runWranglerCommand(ctx, workerDir, strings.NewReader(trackingKeys[currentVersion]+"\n"), "secret", "put", "TRACKING_KEY", "--name", opts.WorkerName); runErr != nil {
+		return "", runErr
+	}
+
+	for _, version := range trackingKeyVersions(trackingKeys) {
+		if runErr := runWranglerCommand(ctx, workerDir, strings.NewReader(trackingKeys[version]+"\n"), "secret", "put", fmt.Sprintf("TRACKING_KEY_V%d", version), "--name", opts.WorkerName); runErr != nil {
+			return "", runErr
+		}
+	}
+
+	if runErr := runWranglerCommand(ctx, workerDir, strings.NewReader(fmt.Sprintf("%d\n", currentVersion)), "secret", "put", "TRACKING_CURRENT_KEY_VERSION", "--name", opts.WorkerName); runErr != nil {
 		return "", runErr
 	}
 
@@ -113,6 +130,41 @@ func DeployWorker(ctx context.Context, logger DeployLogger, opts DeployOptions) 
 	}
 
 	return dbID, nil
+}
+
+func normalizeDeployTrackingKeys(opts DeployOptions) (map[int]string, int, error) {
+	trackingKeys := map[int]string{}
+
+	for version, key := range opts.TrackingKeys {
+		if version < 1 || version > 255 {
+			return nil, 0, fmt.Errorf("%w: %d", errInvalidTrackingKeyVersion, version)
+		}
+
+		if strings.TrimSpace(key) == "" {
+			return nil, 0, errMissingTrackingKey
+		}
+
+		trackingKeys[version] = key
+	}
+
+	currentVersion := opts.TrackingCurrentVersion
+	if currentVersion <= 0 {
+		currentVersion = 1
+	}
+
+	if len(trackingKeys) == 0 && strings.TrimSpace(opts.TrackingKey) != "" {
+		trackingKeys[currentVersion] = opts.TrackingKey
+	}
+
+	if len(trackingKeys) == 0 {
+		return nil, 0, errMissingTrackingKey
+	}
+
+	if strings.TrimSpace(trackingKeys[currentVersion]) == "" {
+		return nil, 0, fmt.Errorf("%w: %d", errMissingCurrentTrackingKeyValue, currentVersion)
+	}
+
+	return trackingKeys, currentVersion, nil
 }
 
 func ensureD1Database(ctx context.Context, workerDir, dbName string) (string, error) {

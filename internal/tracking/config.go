@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -18,14 +19,16 @@ const trackingConfigVersion = 1
 
 // Config holds tracking configuration for a single account.
 type Config struct {
-	Enabled          bool   `json:"enabled"`
-	WorkerURL        string `json:"worker_url"`
-	WorkerName       string `json:"worker_name,omitempty"`
-	DatabaseName     string `json:"database_name,omitempty"`
-	DatabaseID       string `json:"database_id,omitempty"`
-	SecretsInKeyring bool   `json:"secrets_in_keyring,omitempty"`
-	TrackingKey      string `json:"tracking_key,omitempty"`
-	AdminKey         string `json:"admin_key,omitempty"`
+	Enabled                   bool   `json:"enabled"`
+	WorkerURL                 string `json:"worker_url"`
+	WorkerName                string `json:"worker_name,omitempty"`
+	DatabaseName              string `json:"database_name,omitempty"`
+	DatabaseID                string `json:"database_id,omitempty"`
+	SecretsInKeyring          bool   `json:"secrets_in_keyring,omitempty"`
+	TrackingKey               string `json:"tracking_key,omitempty"`
+	TrackingKeyVersions       []int  `json:"tracking_key_versions,omitempty"`
+	TrackingCurrentKeyVersion int    `json:"tracking_current_key_version,omitempty"`
+	AdminKey                  string `json:"admin_key,omitempty"`
 }
 
 type fileConfig struct {
@@ -194,9 +197,41 @@ func hydrateConfig(account string, cfg *Config) (*Config, error) {
 		if strings.TrimSpace(adminKey) != "" {
 			cfg.AdminKey = adminKey
 		}
+
+		if cfg.TrackingCurrentKeyVersion > 0 || len(cfg.TrackingKeyVersions) > 0 {
+			versions := NormalizeTrackingKeyVersions(cfg.TrackingKeyVersions, cfg.TrackingCurrentKeyVersion)
+
+			keys, currentVersion, keyErr := LoadTrackingKeys(account, versions, cfg.TrackingCurrentKeyVersion)
+			if keyErr != nil {
+				return nil, keyErr
+			}
+
+			if strings.TrimSpace(keys[currentVersion]) != "" {
+				cfg.TrackingKey = keys[currentVersion]
+				cfg.TrackingCurrentKeyVersion = currentVersion
+				cfg.TrackingKeyVersions = NormalizeTrackingKeyVersions(versions, currentVersion)
+			}
+		}
 	}
 
 	return cfg, nil
+}
+
+func NormalizeTrackingKeyVersions(versions []int, currentVersion int) []int {
+	normalized := make([]int, 0, len(versions)+1)
+	for _, version := range versions {
+		if version > 0 && version <= 255 {
+			normalized = append(normalized, version)
+		}
+	}
+
+	if currentVersion > 0 && currentVersion <= 255 {
+		normalized = append(normalized, currentVersion)
+	}
+
+	slices.Sort(normalized)
+
+	return slices.Compact(normalized)
 }
 
 func shouldLoadTrackingSecrets(cfg *Config) bool {

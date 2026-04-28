@@ -1,5 +1,5 @@
 import type { Env, PixelPayload } from './types';
-import { importKey, decrypt } from './crypto';
+import { decryptWithKeys, type TrackingKeys } from './crypto';
 import { detectBot } from './bot';
 import { pixelResponse } from './pixel';
 
@@ -52,11 +52,10 @@ async function handlePixel(request: Request, env: Env, path: string): Promise<Re
   // Extract blob from /p/:blob.gif
   const blob = path.slice(3, -4); // Remove '/p/' and '.gif'
 
-  const key = await importKey(env.TRACKING_KEY);
   let payload: PixelPayload;
 
   try {
-    payload = await decrypt(blob, key);
+    payload = await decryptWithKeys(blob, trackingKeysFromEnv(env));
   } catch {
     // Still return pixel even if decryption fails (don't break email display)
     return pixelResponse();
@@ -160,11 +159,10 @@ async function purgeExpiredOpens(env: Env): Promise<void> {
 async function handleQuery(request: Request, env: Env, path: string): Promise<Response> {
   const blob = path.slice(3); // Remove '/q/'
 
-  const key = await importKey(env.TRACKING_KEY);
   let payload: PixelPayload;
 
   try {
-    payload = await decrypt(blob, key);
+    payload = await decryptWithKeys(blob, trackingKeysFromEnv(env));
   } catch {
     return new Response('Invalid tracking ID', { status: 400 });
   }
@@ -258,4 +256,29 @@ function parseAdminLimit(raw: string | null): number {
   }
 
   return Math.min(parsed, MAX_ADMIN_LIMIT);
+}
+
+function trackingKeysFromEnv(env: Env): TrackingKeys {
+  const keys: TrackingKeys = {};
+  for (const [name, value] of Object.entries(env)) {
+    const match = /^TRACKING_KEY_V([1-9][0-9]*)$/.exec(name);
+    if (!match || typeof value !== 'string' || value.trim() === '') {
+      continue;
+    }
+
+    const version = Number.parseInt(match[1], 10);
+    if (version >= 1 && version <= 255) {
+      keys[version] = value;
+    }
+  }
+
+  const currentVersion = Number.parseInt(env.TRACKING_CURRENT_KEY_VERSION || '', 10);
+  const legacyVersion = Number.isFinite(currentVersion) && currentVersion >= 1 && currentVersion <= 255
+    ? currentVersion
+    : 1;
+  if (env.TRACKING_KEY && !keys[legacyVersion]) {
+    keys[legacyVersion] = env.TRACKING_KEY;
+  }
+
+  return keys;
 }
