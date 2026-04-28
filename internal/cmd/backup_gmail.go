@@ -351,7 +351,7 @@ type gmailBackupCheckpointer struct {
 	pending []string
 }
 
-const gmailCheckpointShardMaxRows = 1000
+const gmailCheckpointShardMaxRows = 250
 
 func newGmailBackupCheckpointer(ctx context.Context, opts gmailBackupOptions, total int) *gmailBackupCheckpointer {
 	enabled := opts.Checkpoints &&
