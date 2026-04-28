@@ -128,6 +128,7 @@
 - Calendar: add `calendar alias list|set|unset`, and let calendar commands resolve configured aliases before API/name lookup. (#393) — thanks @salmonumbrella.
 - Calendar: let `calendar freebusy` / `calendar conflicts` accept `--cal`, names, indices, and `--all` like `calendar events`. (#319) — thanks @salmonumbrella.
 - Calendar: add `calendar subscribe` (aliases `sub`, `add-calendar`) to add a shared calendar to the current account’s calendar list. (#327) — thanks @cdthompson.
+- Gmail: add `gmail send --signature`, `--signature-from`, and `--signature-file` to append Gmail send-as or local signatures before sending. (#180, #183) — thanks @kesslerio and @salmonumbrella.
 - Gmail: add `watch serve --history-types` filtering (`messageAdded|messageDeleted|labelAdded|labelRemoved`) and include `deletedMessageIds` in webhook payloads. (#168) — thanks @salmonumbrella.
 - Gmail: add `gmail labels rename` to rename user labels by ID or exact name, with system-label guards and wrong-case ID safety. (#391) — thanks @adam-zethraeus.
 - Gmail: add `gmail messages modify` for single-message label changes, complementing thread- and batch-level modify flows. (#281) — thanks @zerone0x.

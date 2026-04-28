@@ -25,6 +25,9 @@ type GmailSendCmd struct {
 	ReplyTo          string   `name:"reply-to" help:"Reply-To header address"`
 	Attach           []string `name:"attach" help:"Attachment file path (repeatable)"`
 	From             string   `name:"from" help:"Send from this email address (must be a verified send-as alias)"`
+	Signature        bool     `name:"signature" help:"Append the Gmail signature from the active send-as address"`
+	SignatureFrom    string   `name:"signature-from" help:"Append the Gmail signature from this send-as email address"`
+	SignatureFile    string   `name:"signature-file" help:"Append a local signature file (plain text or HTML)"`
 	Track            bool     `name:"track" help:"Enable open tracking (requires tracking setup)"`
 	TrackSplit       bool     `name:"track-split" help:"Send tracked messages separately per recipient"`
 	Quote            bool     `name:"quote" help:"Include quoted original message in reply (requires --reply-to-message-id or --thread-id)"`
@@ -98,6 +101,9 @@ func (c *GmailSendCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if c.Track && strings.TrimSpace(c.BodyHTML) == "" {
 		return fmt.Errorf("--track requires --body-html (pixel must be in HTML)")
 	}
+	if sigErr := c.validateSignatureOptions(); sigErr != nil {
+		return sigErr
+	}
 
 	attachPaths, err := expandComposeAttachmentPaths(c.Attach)
 	if err != nil {
@@ -117,6 +123,9 @@ func (c *GmailSendCmd) Run(ctx context.Context, flags *RootFlags) error {
 		"body_len":            len(strings.TrimSpace(body)),
 		"body_html_len":       len(strings.TrimSpace(c.BodyHTML)),
 		"attachments":         attachPaths,
+		"signature":           c.Signature,
+		"signature_from":      strings.TrimSpace(c.SignatureFrom),
+		"signature_file":      strings.TrimSpace(c.SignatureFile),
 		"track":               c.Track,
 		"track_split":         c.TrackSplit,
 	}); dryRunErr != nil {
@@ -132,7 +141,19 @@ func (c *GmailSendCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if err != nil {
 		return err
 	}
-	replyInfo, body, htmlBody, err := prepareComposeReply(ctx, svc, replyToMessageID, threadID, c.Quote, body, c.BodyHTML)
+	htmlBodyInput := c.BodyHTML
+	if c.signatureRequested() {
+		signature, source, sigErr := c.resolveComposeSignature(ctx, svc, from.sendingEmail)
+		if sigErr != nil {
+			return sigErr
+		}
+		if signature.empty() {
+			u.Err().Printf("Warning: no signature configured for %s", source)
+		} else {
+			body, htmlBodyInput = appendComposeSignature(body, htmlBodyInput, signature)
+		}
+	}
+	replyInfo, body, htmlBody, err := prepareComposeReply(ctx, svc, replyToMessageID, threadID, c.Quote, body, htmlBodyInput)
 	if err != nil {
 		return err
 	}
