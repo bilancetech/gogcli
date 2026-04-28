@@ -689,13 +689,16 @@ gog gmail autoreply 'from:alerts@example.com newer_than:7d' --body-file ./reply.
 gog gmail labels list
 gog gmail labels get INBOX --json  # Includes message counts
 gog gmail labels create "My Label"
+gog gmail labels create "Projects/Review"  # Nested Gmail label
 gog gmail labels rename "Old Label" "New Label"
 gog gmail labels style "My Label" --text-color "#ffffff" --background-color "#4285f4"
 gog gmail labels modify <threadId> --add STARRED --remove INBOX
 gog gmail labels delete <labelIdOrName>  # Deletes user label (guards system labels; confirm)
 
 # Batch operations
-gog gmail batch delete <messageId> <messageId>
+gog gmail trash <messageId> <messageId>          # Move to trash; works with gmail.modify
+gog gmail trash --query 'older_than:30d' --max 100
+gog gmail batch delete <messageId> <messageId>   # Permanent delete; requires https://mail.google.com/
 gog gmail batch modify <messageId> <messageId> --add STARRED --remove INBOX
 
 # Filters
