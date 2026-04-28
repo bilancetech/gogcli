@@ -47,6 +47,24 @@ brew install gogcli
 yay -S gogcli
 ```
 
+### Windows
+
+Download `gogcli_<version>_windows_amd64.zip` or `gogcli_<version>_windows_arm64.zip` from the GitHub release, extract `gog.exe`, and put that directory on `PATH`.
+
+PowerShell example:
+
+```powershell
+$dir = "$env:LOCALAPPDATA\Programs\gogcli"
+New-Item -ItemType Directory -Force $dir | Out-Null
+# Extract gog.exe into $dir, then add $dir to your user PATH.
+$userPath = [string][Environment]::GetEnvironmentVariable("Path", "User")
+if (($userPath -split ";") -notcontains $dir) {
+  [Environment]::SetEnvironmentVariable("Path", ($userPath.TrimEnd(";") + ";$dir").TrimStart(";"), "User")
+}
+$env:Path = "$env:Path;$dir"
+gog --version
+```
+
 ### Build from Source
 
 ```bash
@@ -54,6 +72,8 @@ git clone https://github.com/steipete/gogcli.git
 cd gogcli
 make
 ```
+
+Source builds require the Go version declared in `go.mod` (currently Go 1.26.2). Older distro packages such as Ubuntu 24.04's Go 1.22 are too old; install a current Go toolchain or use a release package.
 
 Run:
 
@@ -135,6 +155,7 @@ gog auth add you@gmail.com --services user --manual
 - The CLI prints an auth URL. Open it in a local browser.
 - After approval, copy the full loopback redirect URL from the browser address bar.
 - Paste that URL back into the terminal when prompted.
+- If the pasted URL is accepted but the command appears stuck before success, OAuth likely completed and token storage is blocked by the OS keyring. Current builds time out keyring operations with a recovery hint; run `gog auth doctor`, or on headless Linux use `GOG_KEYRING_BACKEND=file` with `GOG_KEYRING_PASSWORD=...` and retry.
 
 Split remote flow (`--remote`, useful for two-step/scripted handoff):
 

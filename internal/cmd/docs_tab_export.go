@@ -253,7 +253,7 @@ func checkTabExportResponse(resp *http.Response, format string) error {
 		if parsed, _, err := mime.ParseMediaType(mediaType); err == nil {
 			mediaType = parsed
 		}
-		if format != formatHTML && mediaType == "text/html" {
+		if format != formatHTML && mediaType == mimeHTML {
 			snippet, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 			return fmt.Errorf("tab export returned unexpected text/html (possible auth redirect; try 'gog auth login'): %s", strings.TrimSpace(string(snippet)))
 		}

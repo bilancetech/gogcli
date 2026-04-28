@@ -129,6 +129,54 @@ func TestAuthAddCmd_KeychainError(t *testing.T) {
 	}
 }
 
+type setTokenErrorStore struct {
+	*memSecretsStore
+	err error
+}
+
+func (s *setTokenErrorStore) SetToken(string, string, secrets.Token) error {
+	return s.err
+}
+
+func TestAuthAddCmd_StoreFailureReportsOAuthCompleted(t *testing.T) {
+	origAuth := authorizeGoogle
+	origOpen := openSecretsStore
+	origKeychain := ensureKeychainAccess
+	origFetch := fetchAuthorizedIdentity
+	t.Cleanup(func() {
+		authorizeGoogle = origAuth
+		openSecretsStore = origOpen
+		ensureKeychainAccess = origKeychain
+		fetchAuthorizedIdentity = origFetch
+	})
+
+	ensureKeychainAccess = func() error { return nil }
+	authorizeGoogle = func(context.Context, googleauth.AuthorizeOptions) (string, error) {
+		return "rt", nil
+	}
+	fetchAuthorizedIdentity = func(context.Context, string, string, []string, time.Duration) (googleauth.Identity, error) {
+		return googleauth.Identity{Email: "user@example.com"}, nil
+	}
+
+	openSecretsStore = func() (secrets.Store, error) {
+		return &setTokenErrorStore{
+			memSecretsStore: newMemSecretsStore(),
+			err:             errors.New("keyring connection timed out after 10s while storing keyring item"),
+		}, nil
+	}
+
+	err := Execute([]string{"auth", "add", "user@example.com", "--services", "gmail", "--manual"})
+	if err == nil {
+		t.Fatal("expected store failure")
+	}
+	if !strings.Contains(err.Error(), "OAuth completed, but saving the refresh token failed") {
+		t.Fatalf("expected post-OAuth store failure context, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "storing keyring item") {
+		t.Fatalf("expected keyring operation detail, got: %v", err)
+	}
+}
+
 func TestAuthAddCmd_DefaultServices_UserPreset(t *testing.T) {
 	origAuth := authorizeGoogle
 	origOpen := openSecretsStore

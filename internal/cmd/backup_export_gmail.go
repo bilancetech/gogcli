@@ -328,7 +328,7 @@ func parseBackupEmail(rawMIME []byte) (backupEmail, error) {
 func parseBackupEmailEntity(body []byte, contentType, transferEncoding string, out *backupEmail) error {
 	mediaType, params, err := mime.ParseMediaType(contentType)
 	if err != nil || strings.TrimSpace(mediaType) == "" {
-		mediaType = "text/plain"
+		mediaType = mimeTextPlain
 	}
 	mediaType = strings.ToLower(mediaType)
 	if strings.HasPrefix(mediaType, "multipart/") {
@@ -370,11 +370,11 @@ func parseBackupEmailEntity(body []byte, contentType, transferEncoding string, o
 	decoded := decodeTransferEncoding(body, transferEncoding)
 	decoded = decodeBodyCharset(decoded, contentType)
 	switch mediaType {
-	case "text/plain":
+	case mimeTextPlain:
 		if strings.TrimSpace(out.TextBody) == "" {
 			out.TextBody = string(decoded)
 		}
-	case "text/html":
+	case mimeHTML:
 		if strings.TrimSpace(out.HTMLBody) == "" {
 			out.HTMLBody = string(decoded)
 		}
@@ -384,7 +384,7 @@ func parseBackupEmailEntity(body []byte, contentType, transferEncoding string, o
 
 func isBackupEmailAttachment(contentDisposition, contentType string) bool {
 	disposition, dispParams, _ := mime.ParseMediaType(contentDisposition)
-	if strings.EqualFold(disposition, "attachment") {
+	if strings.EqualFold(disposition, mimeDispositionAttachment) {
 		return true
 	}
 	if strings.EqualFold(disposition, "inline") && strings.TrimSpace(dispParams["filename"]) != "" {
@@ -403,7 +403,7 @@ func backupAttachmentFilename(contentDisposition, contentType string) string {
 	if filename := decodeMIMEHeader(typeParams["name"]); strings.TrimSpace(filename) != "" {
 		return filename
 	}
-	return "attachment"
+	return defaultAttachmentFilename
 }
 
 func decodeMIMEHeader(value string) string {
@@ -480,7 +480,7 @@ func sanitizeBackupAttachmentFilename(value string, fallbackIndex int) string {
 
 func uniqueExportFilename(seen map[string]int, filename string) string {
 	if filename == "" {
-		filename = "attachment"
+		filename = defaultAttachmentFilename
 	}
 	count := seen[filename]
 	seen[filename] = count + 1

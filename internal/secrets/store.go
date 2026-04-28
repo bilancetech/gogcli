@@ -172,8 +172,12 @@ func shouldUseKeyringTimeout(goos string, backendInfo KeyringBackendInfo, dbusAd
 	return goos == goosLinux && backendInfo.Value == "auto" && dbusAddr != ""
 }
 
-func shouldUseKeyringOperationTimeout(goos string, backendInfo KeyringBackendInfo) bool {
-	return goos == goosDarwin && (backendInfo.Value == keyringBackendAuto || backendInfo.Value == "keychain")
+func shouldUseKeyringOperationTimeout(goos string, backendInfo KeyringBackendInfo, dbusAddr string) bool {
+	if goos == goosDarwin {
+		return backendInfo.Value == keyringBackendAuto || backendInfo.Value == "keychain"
+	}
+
+	return goos == goosLinux && backendInfo.Value == keyringBackendAuto && dbusAddr != ""
 }
 
 func keyringTimeoutHint(goos string) string {
@@ -247,7 +251,7 @@ func openKeyring() (keyring.Keyring, error) {
 			return nil, timeoutErr
 		}
 
-		return prepareKeyring(timeoutRing, backendInfo, wrapFileKeys), nil
+		return prepareKeyring(timeoutRing, backendInfo, wrapFileKeys, dbusAddr), nil
 	}
 
 	ring, err := keyringOpenFunc(cfg)
@@ -255,15 +259,15 @@ func openKeyring() (keyring.Keyring, error) {
 		return nil, fmt.Errorf("open keyring: %w", err)
 	}
 
-	return prepareKeyring(ring, backendInfo, wrapFileKeys), nil
+	return prepareKeyring(ring, backendInfo, wrapFileKeys, dbusAddr), nil
 }
 
-func prepareKeyring(ring keyring.Keyring, backendInfo KeyringBackendInfo, wrapFileKeys bool) keyring.Keyring {
+func prepareKeyring(ring keyring.Keyring, backendInfo KeyringBackendInfo, wrapFileKeys bool, dbusAddr string) keyring.Keyring {
 	if wrapFileKeys || isFileKeyring(ring) {
 		ring = newFileSafeKeyring(ring)
 	}
 
-	if shouldUseKeyringOperationTimeout(runtime.GOOS, backendInfo) {
+	if shouldUseKeyringOperationTimeout(runtime.GOOS, backendInfo, dbusAddr) {
 		ring = newTimeoutKeyring(ring, keyringOpenTimeout, keyringTimeoutHint(runtime.GOOS))
 	}
 
