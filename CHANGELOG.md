@@ -4,10 +4,15 @@
 
 ### Added
 - Agent safety: add baked safety-profile builds for fail-closed agent binaries, with `agent-safe`, `readonly`, and `full` profiles, filtered help/schema output, docs, and build tooling. (#366, #239) — thanks @drewburchfield.
+- Docs: add `docs add-tab`, `docs rename-tab`, and `docs delete-tab` for managing Google Docs tabs. (#547) — thanks @chopenhauer.
+- Docs: support tab-scoped Markdown append and find-replace flows. (#541) — thanks @donbowman.
 
 ### Fixed
 - Backup: promote completed Gmail checkpoint shards into the final manifest and byte-split fallback Gmail message shards so full-mailbox runs do not create GitHub-rejected blobs or giant final pushes.
 - Backup export: stream decrypted shards one at a time, preserve resumable Gmail Markdown mirrors, handle very large JSONL rows, and write Markdown fallbacks for malformed MIME messages instead of aborting full-mailbox exports.
+- Calendar: accept documented `calendar events list` / `ls` selector forms with positional calendar IDs, `--cal`, `--calendars`, and `--all`. (#546) — thanks @BCudeOpenClaw.
+- Docs: make `docs find-replace --dry-run` read-only while still reporting match counts, and allow empty replacement strings to delete matches safely. (#542) — thanks @chrismdp.
+- Version: infer module versions from Go build info for `go install ...@tag` binaries that do not pass linker metadata. (#545, #544) — thanks @joshavant.
 
 ## 0.14.0 - 2026-04-28
 

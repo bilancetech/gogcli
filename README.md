@@ -115,6 +115,26 @@ Before adding an account, create OAuth2 credentials from Google Cloud Console:
    - Google Forms API: https://console.cloud.google.com/apis/api/forms.googleapis.com
    - Google Slides API: https://console.cloud.google.com/apis/api/slides.googleapis.com
    If Google returns `accessNotConfigured` or says an API has not been used in the project, enable the API in the same Cloud project that owns your OAuth client JSON, then retry after the enablement propagates.
+
+   `gog` does not require Google Workspace for normal user automation. For a
+   consumer `gmail.com` account, a regular Google Cloud project plus a "Desktop
+   app" OAuth client is enough for Gmail, Calendar, Drive, Docs, Sheets, Slides,
+   Forms, Apps Script, Contacts/People, Tasks, and Classroom, as long as the
+   matching APIs are enabled in that same Cloud project and the account grants
+   the requested scopes.
+
+   Google Workspace or Cloud Identity is only required for APIs Google restricts
+   to managed domains, such as Chat, Cloud Identity Groups, Admin Directory, and
+   Keep/domain-wide-delegation flows. If you authenticate a consumer Gmail
+   account for those services, `gog` can store the scopes, but Google may still
+   reject live API calls because the account is not a Workspace account.
+
+   Apps Script has one extra user-side switch: after enabling
+   `script.googleapis.com` in the Cloud project, open
+   https://script.google.com/home/usersettings as the same Google account and
+   turn on the Google Apps Script API. Without that per-user toggle, Apps Script
+   calls can still return a 403 even when OAuth and the Cloud project API are
+   configured correctly.
 3. Configure OAuth consent screen: https://console.cloud.google.com/auth/branding
 4. If your app is in "Testing", add test users: https://console.cloud.google.com/auth/audience
    - Testing-mode refresh tokens expire after 7 days for External apps that request Gmail/Drive/Calendar-style user-data scopes. For a personal consumer Gmail account, publish the OAuth app for long-lived refresh tokens; a small personal/unverified app can still show Google's unverified-app warning and user cap. Staying in Testing means re-authenticating every 7 days.
