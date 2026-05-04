@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.15.0 - Unreleased
+## 0.15.0 - 2026-05-04
 
 ### Added
 - Install: publish a GHCR Docker image for release tags, with a non-root runtime image and file-keyring docs for container automation. (#539, #444) — thanks @HuckOps and @rdehuyss.
