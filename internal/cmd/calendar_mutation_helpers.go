@@ -71,6 +71,14 @@ func (m *calendarMutationContext) deleteEvent(ctx context.Context, eventID, send
 	return call.Do()
 }
 
+func (m *calendarMutationContext) moveEvent(ctx context.Context, eventID, destinationCalendarID, sendUpdates string) (*calendar.Event, error) {
+	call := m.svc.Events.Move(m.calendarID, eventID, destinationCalendarID).Context(ctx)
+	if sendUpdates != "" {
+		call = call.SendUpdates(sendUpdates)
+	}
+	return call.Do()
+}
+
 func (m *calendarMutationContext) writeEvent(ctx context.Context, event *calendar.Event) error {
 	tz, loc, _ := getCalendarLocation(ctx, m.svc, m.calendarID)
 	if outfmt.IsJSON(ctx) {

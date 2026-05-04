@@ -67,6 +67,7 @@ calendar:
   event: true
   create: false
   update: false
+  move: false
   delete: false
   freebusy: true
   respond: false

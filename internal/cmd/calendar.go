@@ -10,6 +10,7 @@ type CalendarCmd struct {
 	Event           CalendarEventCmd           `cmd:"" name:"event" aliases:"get,info,show" help:"Get event"`
 	Create          CalendarCreateCmd          `cmd:"" name:"create" aliases:"add,new" help:"Create an event"`
 	Update          CalendarUpdateCmd          `cmd:"" name:"update" aliases:"edit,set" help:"Update an event"`
+	Move            CalendarMoveCmd            `cmd:"" name:"move" aliases:"transfer" help:"Move an event to another calendar"`
 	Delete          CalendarDeleteCmd          `cmd:"" name:"delete" aliases:"rm,del,remove" help:"Delete an event"`
 	FreeBusy        CalendarFreeBusyCmd        `cmd:"" name:"freebusy" help:"Get free/busy"`
 	Respond         CalendarRespondCmd         `cmd:"" name:"respond" aliases:"rsvp,reply" help:"Respond to an event invitation"`

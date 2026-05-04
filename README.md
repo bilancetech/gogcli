@@ -989,6 +989,10 @@ gog calendar create <calendarId> \
 gog calendar update <calendarId> <eventId> \
   --send-updates externalOnly
 
+# Move an event to another calendar, changing the event organizer.
+gog calendar move <calendarId> <eventId> <destinationCalendarId> \
+  --send-updates all
+
 # Default: no attendee notifications unless you pass --send-updates.
 gog calendar delete <calendarId> <eventId> \
   --send-updates all --force

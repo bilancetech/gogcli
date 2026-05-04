@@ -74,6 +74,7 @@ Generated from `gog schema --json`.
 - `gog calendar (cal) events (list,ls) [<calendarId> ...] [flags]` - List events from a calendar or all calendars
 - `gog calendar (cal) focus-time (focus) --from=STRING --to=STRING [<calendarId>] [flags]` - Create a Focus Time block
 - `gog calendar (cal) freebusy [<calendarIds>] [flags]` - Get free/busy
+- `gog calendar (cal) move (transfer) <calendarId> <eventId> <destinationCalendarId> [flags]` - Move an event to another calendar
 - `gog calendar (cal) out-of-office (ooo) --from=STRING --to=STRING [<calendarId>] [flags]` - Create an Out of Office event
 - `gog calendar (cal) propose-time <calendarId> <eventId> [flags]` - Generate URL to propose a new meeting time (browser-only feature)
 - `gog calendar (cal) respond (rsvp,reply) <calendarId> <eventId> [flags]` - Respond to an event invitation
