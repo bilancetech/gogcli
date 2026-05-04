@@ -3,6 +3,7 @@
 ## 0.15.0 - Unreleased
 
 ### Added
+- Install: publish a GHCR Docker image for release tags, with a non-root runtime image and file-keyring docs for container automation. (#539, #444) — thanks @HuckOps and @rdehuyss.
 - Agent safety: add baked safety-profile builds for fail-closed agent binaries, with `agent-safe`, `readonly`, and `full` profiles, filtered help/schema output, docs, and build tooling. (#366, #239) — thanks @drewburchfield.
 - Calendar: add `--with-meet` to `calendar update` for adding Google Meet conferencing to existing events. (#538) — thanks @alexisperumal.
 - Calendar: add `calendar move` / `calendar transfer` to move an event to another calendar and change its organizer. (#448) — thanks @markusbkoch.

@@ -65,6 +65,35 @@ $env:Path = "$env:Path;$dir"
 gog --version
 ```
 
+### Docker
+
+Release images are published to GitHub Container Registry:
+
+```bash
+docker run --rm ghcr.io/steipete/gogcli:latest version
+```
+
+For authenticated automation in a container, mount a persistent config directory and use the encrypted file keyring:
+
+```bash
+docker volume create gogcli-config
+docker run --rm -it \
+  -e GOG_KEYRING_BACKEND=file \
+  -e GOG_KEYRING_PASSWORD='change-me' \
+  -v gogcli-config:/home/gog/.config/gogcli \
+  ghcr.io/steipete/gogcli:latest auth add you@gmail.com --services gmail,calendar,drive
+```
+
+Subsequent runs can reuse the same volume and password:
+
+```bash
+docker run --rm \
+  -e GOG_KEYRING_BACKEND=file \
+  -e GOG_KEYRING_PASSWORD='change-me' \
+  -v gogcli-config:/home/gog/.config/gogcli \
+  ghcr.io/steipete/gogcli:latest gmail labels list --account you@gmail.com
+```
+
 ### Build from Source
 
 ```bash
