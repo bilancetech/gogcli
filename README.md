@@ -1960,11 +1960,24 @@ Pinned tools (installed into `.tools/`):
 
 CI runs format checks, tests, and lint on push/PR.
 
-Regenerate the expanded command reference from the live schema when CLI surface changes:
+Documentation is split between hand-written topic pages in `docs/` and generated
+per-command pages in `docs/commands/`. Every CLI command should have a docs page;
+do not hand-edit generated command pages. Regenerate them from the live schema
+whenever command names, flags, aliases, arguments, or help text change:
 
 ```bash
 make docs-commands
 ```
+
+Build the GitHub Pages site locally:
+
+```bash
+make docs-site
+open dist/docs-site/index.html
+```
+
+The Pages workflow rebuilds the command pages and publishes the static site from
+`dist/docs-site` using the custom domain in `docs/CNAME`.
 
 ### Integration Tests (Live Google APIs)
 
