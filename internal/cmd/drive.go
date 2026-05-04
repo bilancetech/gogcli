@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -12,6 +13,7 @@ import (
 	"strings"
 
 	"google.golang.org/api/drive/v3"
+	gapi "google.golang.org/api/googleapi"
 
 	"github.com/steipete/gogcli/internal/googleapi"
 	"github.com/steipete/gogcli/internal/outfmt"
@@ -53,13 +55,16 @@ const (
 	extTXT                 = ".txt"
 	extMD                  = ".md"
 	extHTML                = ".html"
-	formatAuto             = "auto"
+	formatAuto             = literalAuto
 	driveShareToAnyone     = "anyone"
 	driveShareToUser       = "user"
 	driveShareToDomain     = "domain"
 
-	drivePermRoleReader = "reader"
-	drivePermRoleWriter = "writer"
+	// Drive sharing permission roles matching the Google Drive API roles.
+	// "commenter" allows view + comment access without edit rights.
+	drivePermRoleReader    = "reader"
+	drivePermRoleWriter    = "writer"
+	drivePermRoleCommenter = "commenter"
 )
 
 type DriveCmd struct {
@@ -79,6 +84,94 @@ type DriveCmd struct {
 	URL         DriveURLCmd         `cmd:"" name:"url" help:"Print web URLs for files"`
 	Comments    DriveCommentsCmd    `cmd:"" name:"comments" help:"Manage comments on files"`
 	Drives      DriveDrivesCmd      `cmd:"" name:"drives" help:"List shared drives (Team Drives)"`
+	Raw         DriveRawCmd         `cmd:"" name:"raw" help:"Dump raw Google Drive API response as JSON (Files.Get; lossless; for scripting and LLM consumption)"`
+}
+
+// driveRawSensitiveFields is the set of top-level File fields redacted from
+// `gog drive raw` output when the user did not name them via --fields. See
+// docs/raw-audit.md for the rationale per field.
+var driveRawSensitiveFields = []string{
+	"thumbnailLink",
+	"webContentLink",
+	"exportLinks",
+	"resourceKey",
+	"appProperties",
+	"properties",
+}
+
+// DriveRawCmd dumps the full Files.Get response as JSON. Uses fields=* by
+// default to expose the entire File resource. When --fields is absent the
+// command redacts a small set of capability/token-shaped fields (see
+// driveRawSensitiveFields); when --fields is explicitly set the response is
+// returned verbatim, honoring exactly what the user asked for. This means
+// passing `--fields "id,name,thumbnailLink"` returns thumbnailLink as
+// requested.
+//
+// REST reference: https://developers.google.com/drive/api/reference/rest/v3/files/get
+// Go type: https://pkg.go.dev/google.golang.org/api/drive/v3#File
+type DriveRawCmd struct {
+	FileID string `arg:"" name:"fileId" help:"File ID"`
+	Fields string `name:"fields" help:"Drive API field mask (default: * with sensitive fields redacted client-side). Set explicitly to disable redaction."`
+	Pretty bool   `name:"pretty" help:"Pretty-print JSON (default: compact single-line)"`
+}
+
+func (c *DriveRawCmd) Run(ctx context.Context, flags *RootFlags) error {
+	fileID := strings.TrimSpace(c.FileID)
+	if fileID == "" {
+		return usage("empty fileId")
+	}
+
+	account, err := requireAccount(flags)
+	if err != nil {
+		return err
+	}
+	svc, err := newDriveService(ctx, account)
+	if err != nil {
+		return err
+	}
+
+	userSetFields := strings.TrimSpace(c.Fields) != ""
+	mask := "*"
+	if userSetFields {
+		mask = c.Fields
+	}
+
+	f, err := svc.Files.Get(fileID).
+		SupportsAllDrives(true).
+		Fields(gapi.Field(mask)).
+		Context(ctx).
+		Do()
+	if err != nil {
+		return err
+	}
+	if f == nil {
+		return errors.New("file not found")
+	}
+
+	// Round-trip through JSON so we can redact by key when needed.
+	raw, err := json.Marshal(f)
+	if err != nil {
+		return fmt.Errorf("marshal drive file: %w", err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return fmt.Errorf("unmarshal drive file: %w", err)
+	}
+
+	// Redact only when the user did not explicitly request fields.
+	if !userSetFields {
+		for _, key := range driveRawSensitiveFields {
+			delete(m, key)
+		}
+		// contentHints.thumbnail.image is the one nested leak.
+		if hints, ok := m["contentHints"].(map[string]any); ok {
+			if thumb, ok := hints["thumbnail"].(map[string]any); ok {
+				delete(thumb, "image")
+			}
+		}
+	}
+
+	return outfmt.WriteRaw(ctx, os.Stdout, m, outfmt.RawOptions{Pretty: c.Pretty})
 }
 
 type DriveLsCmd struct {
@@ -88,6 +181,7 @@ type DriveLsCmd struct {
 	Parent    string `name:"parent" help:"Folder ID to list (default: root)"`
 	All       bool   `name:"all" aliases:"global" help:"List all accessible files (mutually exclusive with --parent)"`
 	AllDrives bool   `name:"all-drives" help:"Include shared drives (default: true; use --no-all-drives for My Drive only)" default:"true" negatable:"_"`
+	Fields    string `name:"fields" help:"Drive API field mask (overrides the default set; e.g. 'files(id,name,thumbnailLink),nextPageToken')"`
 }
 
 type DriveSearchCmd struct {
@@ -96,10 +190,13 @@ type DriveSearchCmd struct {
 	Max       int64    `name:"max" aliases:"limit" help:"Max results" default:"20"`
 	Page      string   `name:"page" aliases:"cursor" help:"Page token"`
 	AllDrives bool     `name:"all-drives" help:"Include shared drives (default: true; use --no-all-drives for My Drive only)" default:"true" negatable:"_"`
+	Drive     string   `name:"drive" aliases:"drive-id" help:"Scope search to a specific shared drive (uses corpora=drive with driveId). Mutually exclusive with --no-all-drives. Pass the driveId from 'gog drive drives'."`
+	Parent    string   `name:"parent" help:"Scope search to direct children of a specific folder or shared drive. Wraps the query with \"'<parentId>' in parents\"."`
 }
 
 type DriveGetCmd struct {
 	FileID string `arg:"" name:"fileId" help:"File ID"`
+	Fields string `name:"fields" help:"Drive API field mask (overrides the default set; e.g. 'id,name,thumbnailLink')"`
 }
 
 func (c *DriveGetCmd) Run(ctx context.Context, flags *RootFlags) error {
@@ -118,9 +215,13 @@ func (c *DriveGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
+	mask := driveFileGetFields
+	if strings.TrimSpace(c.Fields) != "" {
+		mask = c.Fields
+	}
 	f, err := svc.Files.Get(fileID).
 		SupportsAllDrives(true).
-		Fields("id, name, mimeType, size, modifiedTime, createdTime, parents, webViewLink, description, starred").
+		Fields(gapi.Field(mask)).
 		Context(ctx).
 		Do()
 	if err != nil {
@@ -151,19 +252,35 @@ type DriveDownloadCmd struct {
 	FileID string         `arg:"" name:"fileId" help:"File ID"`
 	Output OutputPathFlag `embed:""`
 	Format string         `name:"format" help:"Export format for Google Docs files: pdf|csv|xlsx|pptx|txt|png|docx|md (default: inferred)"`
+	Tab    string         `name:"tab" help:"(experimental) Export a specific tab by title or ID (Google Docs only; see 'gog docs list-tabs')"`
 }
 
 func (c *DriveDownloadCmd) Run(ctx context.Context, flags *RootFlags) error {
-	u := ui.FromContext(ctx)
 	account, err := requireAccount(flags)
 	if err != nil {
 		return err
 	}
 
-	fileID := strings.TrimSpace(c.FileID)
+	fileID := normalizeGoogleID(strings.TrimSpace(c.FileID))
 	if fileID == "" {
 		return usage("empty fileId")
 	}
+
+	if tab := strings.TrimSpace(c.Tab); tab != "" {
+		if f := c.Format; f != "" && f != formatAuto {
+			if _, fmtErr := tabExportFormatParam(f); fmtErr != nil {
+				return fmt.Errorf("--tab limits export formats (pdf|docx|txt|md|html); %q is not supported with --tab", f)
+			}
+		}
+		return runDocsTabExport(ctx, flags, tabExportParams{
+			DocID:    fileID,
+			OutFlag:  c.Output.Path,
+			Format:   c.Format,
+			TabQuery: tab,
+		})
+	}
+
+	u := ui.FromContext(ctx)
 	if formatErr := validateDriveDownloadFormatFlag(c.Format); formatErr != nil {
 		return formatErr
 	}
@@ -192,6 +309,9 @@ func (c *DriveDownloadCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if err != nil {
 		return err
 	}
+	if outfmt.IsJSON(ctx) && isStdoutPath(destPath) {
+		return usage("can't combine --json with --out -")
+	}
 
 	downloadedPath, size, err := downloadDriveFile(ctx, svc, meta, destPath, c.Format)
 	if err != nil {
@@ -203,6 +323,9 @@ func (c *DriveDownloadCmd) Run(ctx context.Context, flags *RootFlags) error {
 			"path": downloadedPath,
 			"size": size,
 		})
+	}
+	if isStdoutPath(downloadedPath) {
+		return nil
 	}
 
 	u.Out().Printf("path\t%s", downloadedPath)
@@ -231,6 +354,7 @@ type DriveUploadCmd struct {
 	KeepRevisionForever bool   `name:"keep-revision-forever" help:"Keep the new head revision forever (binary files only)"`
 	Convert             bool   `name:"convert" help:"Auto-convert to native Google format based on file extension (create only)"`
 	ConvertTo           string `name:"convert-to" help:"Convert to a specific Google format: doc|sheet|slides (create only)"`
+	KeepFrontmatter     bool   `name:"keep-frontmatter" help:"Keep YAML frontmatter (---) in Markdown when converting to a Google Doc (--convert or --convert-to doc; default: strip)"`
 }
 
 type DriveMkdirCmd struct {
@@ -445,8 +569,14 @@ type DriveShareCmd struct {
 	Anyone       bool   `name:"anyone" hidden:"" help:"(deprecated) Use --to=anyone"`
 	Email        string `name:"email" help:"User email (for --to=user)"`
 	Domain       string `name:"domain" help:"Domain (for --to=domain; e.g. example.com)"`
-	Role         string `name:"role" help:"Permission: reader|writer" default:"reader"`
+	Role         string `name:"role" help:"Permission: reader|writer|commenter" default:"reader"`
 	Discoverable bool   `name:"discoverable" help:"Allow file discovery in search (anyone/domain only)"`
+}
+
+type driveShareTarget struct {
+	to     string
+	email  string
+	domain string
 }
 
 func (c *DriveShareCmd) Run(ctx context.Context, flags *RootFlags) error {
@@ -460,61 +590,15 @@ func (c *DriveShareCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return usage("empty fileId")
 	}
 
-	to := strings.TrimSpace(c.To)
-	email := strings.TrimSpace(c.Email)
-	domain := strings.TrimSpace(c.Domain)
-
-	// Back-compat: allow legacy target flags without --to, but keep it unambiguous.
-	// New UX: prefer explicit --to + matching parameter.
-	if to == "" {
-		switch {
-		case c.Anyone && email == "" && domain == "":
-			to = driveShareToAnyone
-		case !c.Anyone && email != "" && domain == "":
-			to = driveShareToUser
-		case !c.Anyone && email == "" && domain != "":
-			to = driveShareToDomain
-		case !c.Anyone && email == "" && domain == "":
-			return usage("must specify --to (anyone|user|domain)")
-		default:
-			return usage("ambiguous share target (use --to=anyone|user|domain)")
-		}
+	target, err := c.normalizeTarget()
+	if err != nil {
+		return err
 	}
-
-	switch to {
-	case driveShareToAnyone:
-		if email != "" || domain != "" {
-			return usage("--to=anyone cannot be combined with --email or --domain")
-		}
-	case driveShareToUser:
-		if email == "" {
-			return usage("missing --email for --to=user")
-		}
-		if domain != "" || c.Anyone {
-			return usage("--to=user cannot be combined with --anyone or --domain")
-		}
-		if c.Discoverable {
-			return usage("--discoverable is only valid for --to=anyone or --to=domain")
-		}
-	case driveShareToDomain:
-		if domain == "" {
-			return usage("missing --domain for --to=domain")
-		}
-		if email != "" || c.Anyone {
-			return usage("--to=domain cannot be combined with --anyone or --email")
-		}
-	default:
-		// Should be guarded by enum, but keep a friendly message for future changes.
-		return usage("invalid --to (expected anyone|user|domain)")
+	role, err := normalizeDrivePermissionRole(c.Role)
+	if err != nil {
+		return err
 	}
-	role := strings.TrimSpace(c.Role)
-	if role == "" {
-		role = drivePermRoleReader
-	}
-	if role != drivePermRoleReader && role != drivePermRoleWriter {
-		return usage("invalid --role (expected reader|writer)")
-	}
-	if to == driveShareToAnyone {
+	if target.to == driveShareToAnyone {
 		if confirmErr := confirmDestructive(ctx, flags, fmt.Sprintf("share drive file %s with anyone (public)", fileID)); confirmErr != nil {
 			return confirmErr
 		}
@@ -525,19 +609,7 @@ func (c *DriveShareCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	perm := &drive.Permission{Role: role}
-	switch to {
-	case driveShareToAnyone:
-		perm.Type = "anyone"
-		perm.AllowFileDiscovery = c.Discoverable
-	case driveShareToDomain:
-		perm.Type = "domain"
-		perm.Domain = domain
-		perm.AllowFileDiscovery = c.Discoverable
-	default:
-		perm.Type = "user"
-		perm.EmailAddress = email
-	}
+	perm := target.permission(role, c.Discoverable)
 
 	created, err := svc.Permissions.Create(fileID, perm).
 		SupportsAllDrives(true).
@@ -565,6 +637,88 @@ func (c *DriveShareCmd) Run(ctx context.Context, flags *RootFlags) error {
 	u.Out().Printf("link\t%s", link)
 	u.Out().Printf("permission_id\t%s", created.Id)
 	return nil
+}
+
+func (c *DriveShareCmd) normalizeTarget() (driveShareTarget, error) {
+	to := strings.TrimSpace(c.To)
+	email := strings.TrimSpace(c.Email)
+	domain := strings.TrimSpace(c.Domain)
+
+	// Back-compat: allow legacy target flags without --to, but keep it unambiguous.
+	// New UX: prefer explicit --to + matching parameter.
+	if to == "" {
+		switch {
+		case c.Anyone && email == "" && domain == "":
+			to = driveShareToAnyone
+		case !c.Anyone && email != "" && domain == "":
+			to = driveShareToUser
+		case !c.Anyone && email == "" && domain != "":
+			to = driveShareToDomain
+		case !c.Anyone && email == "" && domain == "":
+			return driveShareTarget{}, usage("must specify --to (anyone|user|domain)")
+		default:
+			return driveShareTarget{}, usage("ambiguous share target (use --to=anyone|user|domain)")
+		}
+	}
+
+	switch to {
+	case driveShareToAnyone:
+		if email != "" || domain != "" {
+			return driveShareTarget{}, usage("--to=anyone cannot be combined with --email or --domain")
+		}
+	case driveShareToUser:
+		if email == "" {
+			return driveShareTarget{}, usage("missing --email for --to=user")
+		}
+		if domain != "" || c.Anyone {
+			return driveShareTarget{}, usage("--to=user cannot be combined with --anyone or --domain")
+		}
+		if c.Discoverable {
+			return driveShareTarget{}, usage("--discoverable is only valid for --to=anyone or --to=domain")
+		}
+	case driveShareToDomain:
+		if domain == "" {
+			return driveShareTarget{}, usage("missing --domain for --to=domain")
+		}
+		if email != "" || c.Anyone {
+			return driveShareTarget{}, usage("--to=domain cannot be combined with --anyone or --email")
+		}
+	default:
+		// Should be guarded by enum, but keep a friendly message for future changes.
+		return driveShareTarget{}, usage("invalid --to (expected anyone|user|domain)")
+	}
+
+	return driveShareTarget{to: to, email: email, domain: domain}, nil
+}
+
+func (target driveShareTarget) permission(role string, discoverable bool) *drive.Permission {
+	perm := &drive.Permission{Role: role}
+	switch target.to {
+	case driveShareToAnyone:
+		perm.Type = "anyone"
+		perm.AllowFileDiscovery = discoverable
+	case driveShareToDomain:
+		perm.Type = "domain"
+		perm.Domain = target.domain
+		perm.AllowFileDiscovery = discoverable
+	default:
+		perm.Type = "user"
+		perm.EmailAddress = target.email
+	}
+	return perm
+}
+
+func normalizeDrivePermissionRole(role string) (string, error) {
+	role = strings.TrimSpace(role)
+	if role == "" {
+		return drivePermRoleReader, nil
+	}
+	switch role {
+	case drivePermRoleReader, drivePermRoleWriter, drivePermRoleCommenter:
+		return role, nil
+	default:
+		return "", usage("invalid --role (expected reader|writer|commenter)")
+	}
 }
 
 type DriveUnshareCmd struct {
@@ -900,7 +1054,11 @@ func downloadDriveFile(ctx context.Context, svc *drive.Service, meta *drive.File
 				return "", 0, mimeErr
 			}
 		}
-		outPath = replaceExt(destPath, driveExportExtension(exportMimeType))
+		if isStdoutPath(destPath) {
+			outPath = stdoutPath
+		} else {
+			outPath = replaceExt(destPath, driveExportExtension(exportMimeType))
+		}
 		resp, err = driveExportDownload(ctx, svc, meta.Id, exportMimeType)
 	} else {
 		outPath = destPath
@@ -916,6 +1074,11 @@ func downloadDriveFile(ctx context.Context, svc *drive.Service, meta *drive.File
 		return "", 0, fmt.Errorf("download failed: %s: %s", resp.Status, strings.TrimSpace(string(body)))
 	}
 
+	if isStdoutPath(outPath) {
+		n, copyErr := io.Copy(os.Stdout, resp.Body)
+		return stdoutPath, n, copyErr
+	}
+
 	f, outPath, err := createUserOutputFile(outPath)
 	if err != nil {
 		return "", 0, err
@@ -929,10 +1092,15 @@ func downloadDriveFile(ctx context.Context, svc *drive.Service, meta *drive.File
 	return outPath, n, nil
 }
 
-func driveFilesListCallWithDriveSupport(call *drive.FilesListCall, allDrives bool) *drive.FilesListCall {
+func driveFilesListCallWithDriveSupport(call *drive.FilesListCall, allDrives bool, driveID string) *drive.FilesListCall {
 	// SupportsAllDrives must be set for shared drive file IDs to behave correctly.
 	call = call.SupportsAllDrives(true).IncludeItemsFromAllDrives(allDrives)
-	if allDrives {
+	if driveID != "" {
+		// Scoped search within a specific shared drive. The Drive API requires
+		// corpora=drive + driveId together, and includeItemsFromAllDrives=true —
+		// which is why callers must guard against driveID!="" with allDrives=false.
+		call = call.Corpora("drive").DriveId(driveID)
+	} else if allDrives {
 		call = call.Corpora("allDrives")
 	}
 	return call
@@ -1088,7 +1256,7 @@ func googleConvertMimeType(path string) (string, bool) {
 		return driveMimeGoogleSheet, true
 	case extPptx, ".ppt":
 		return driveMimeGoogleSlides, true
-	case extTXT, ".html":
+	case extTXT, ".html", extMD:
 		return driveMimeGoogleDoc, true
 	default:
 		return "", false
@@ -1123,7 +1291,7 @@ func driveUploadConvertMimeType(path string, auto bool, target string) (string, 
 
 	mimeType, ok := googleConvertMimeType(path)
 	if !ok {
-		return "", false, fmt.Errorf("--convert: unsupported file type %q (supported: docx, xlsx, pptx, doc, xls, ppt, csv, txt, html)", filepath.Ext(path))
+		return "", false, fmt.Errorf("--convert: unsupported file type %q (supported: docx, xlsx, pptx, doc, xls, ppt, csv, txt, html, md)", filepath.Ext(path))
 	}
 	return mimeType, true, nil
 }
@@ -1133,7 +1301,7 @@ func driveUploadConvertMimeType(path string, auto bool, target string) (string, 
 func stripOfficeExt(name string) string {
 	ext := strings.ToLower(filepath.Ext(name))
 	switch ext {
-	case extDocx, ".doc", extXlsx, ".xls", extPptx, ".ppt":
+	case extDocx, ".doc", extXlsx, ".xls", extPptx, ".ppt", extMD:
 		return strings.TrimSuffix(name, filepath.Ext(name))
 	default:
 		return name

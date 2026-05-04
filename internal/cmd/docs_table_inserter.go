@@ -11,20 +11,18 @@ import (
 type TableInserter struct {
 	svc   *docs.Service
 	docID string
-	tabID string
 }
 
-func NewTableInserter(svc *docs.Service, docID, tabID string) *TableInserter {
+func NewTableInserter(svc *docs.Service, docID string) *TableInserter {
 	return &TableInserter{
 		svc:   svc,
 		docID: docID,
-		tabID: tabID,
 	}
 }
 
 // InsertNativeTable inserts a native Google Docs table and populates it with content
 // Returns the end index of the table after insertion
-func (ti *TableInserter) InsertNativeTable(ctx context.Context, tableIndex int64, cells [][]string) (int64, error) {
+func (ti *TableInserter) InsertNativeTable(ctx context.Context, tableIndex int64, cells [][]string, tabID string) (int64, error) {
 	if len(cells) == 0 || len(cells[0]) == 0 {
 		return tableIndex, nil
 	}
@@ -39,7 +37,7 @@ func (ti *TableInserter) InsertNativeTable(ctx context.Context, tableIndex int64
 			Columns: cols,
 			Location: &docs.Location{
 				Index: tableIndex,
-				TabId: ti.tabID,
+				TabId: tabID,
 			},
 		},
 	}
@@ -52,11 +50,10 @@ func (ti *TableInserter) InsertNativeTable(ctx context.Context, tableIndex int64
 	}
 
 	// Step 2: Fetch the document to get cell indices
-	loaded, err := loadDocsTargetDocument(ctx, ti.svc, ti.docID, ti.tabID)
+	doc, err := ti.svc.Documents.Get(ti.docID).Context(ctx).Do()
 	if err != nil {
 		return tableIndex, fmt.Errorf("get document after table insert: %w", err)
 	}
-	doc := loaded.target
 
 	// Step 3: Find the table in the document and get cell indices
 	cellIndices, tableEndIndex, err := ti.getTableCellIndices(doc, tableIndex, rows, cols)
@@ -82,7 +79,6 @@ func (ti *TableInserter) InsertNativeTable(ctx context.Context, tableIndex int64
 				InsertText: &docs.InsertTextRequest{
 					Location: &docs.Location{
 						Index: cellIdx,
-						TabId: ti.tabID,
 					},
 					Text: cellContent,
 				},
@@ -96,7 +92,6 @@ func (ti *TableInserter) InsertNativeTable(ctx context.Context, tableIndex int64
 						Range: &docs.Range{
 							StartIndex: cellIdx,
 							EndIndex:   cellIdx + utf16Len(cellContent),
-							TabId:      ti.tabID,
 						},
 						TextStyle: &docs.TextStyle{
 							Bold: true,

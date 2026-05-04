@@ -4,7 +4,7 @@ import "testing"
 
 func TestMarkdownToDocsRequests_BaseIndex(t *testing.T) {
 	elements := []MarkdownElement{{Type: MDParagraph, Content: "**bold**"}}
-	requests, text, tables := MarkdownToDocsRequests(elements, 42)
+	requests, text, tables := MarkdownToDocsRequests(elements, 42, "")
 
 	if text != "bold\n" {
 		t.Fatalf("unexpected text: %q", text)
@@ -27,7 +27,7 @@ func TestMarkdownToDocsRequests_TableStartIndexUsesBase(t *testing.T) {
 		{Type: MDParagraph, Content: "A"},
 		{Type: MDTable, TableCells: [][]string{{"h1", "h2"}, {"v1", "v2"}}},
 	}
-	_, text, tables := MarkdownToDocsRequests(elements, 10)
+	_, text, tables := MarkdownToDocsRequests(elements, 10, "")
 
 	if text != "A\n\n" {
 		t.Fatalf("unexpected text: %q", text)
@@ -45,39 +45,21 @@ func TestMarkdownToDocsRequests_UsesParagraphBulletsForLists(t *testing.T) {
 		{Type: MDListItem, Content: "**First**"},
 		{Type: MDNumberedList, Content: "Second"},
 	}
-	requests, text, tables := MarkdownToDocsRequests(elements, 5)
+	requests, text, tables := MarkdownToDocsRequests(elements, 5, "")
 
-	if text != "First\nSecond\n" {
+	if text != "• First\n1. Second\n" {
 		t.Fatalf("unexpected text: %q", text)
 	}
 	if len(tables) != 0 {
 		t.Fatalf("unexpected tables: %d", len(tables))
 	}
-	if len(requests) != 3 {
-		t.Fatalf("expected 3 requests (2 bullets + 1 style), got %d", len(requests))
+	if len(requests) != 1 {
+		t.Fatalf("expected 1 style request, got %d", len(requests))
 	}
-	if requests[0].CreateParagraphBullets == nil {
-		t.Fatalf("expected first request to create bullets, got %#v", requests[0])
+	if requests[0].UpdateTextStyle == nil {
+		t.Fatalf("expected request to style bold list text, got %#v", requests[0])
 	}
-	if requests[0].CreateParagraphBullets.BulletPreset != bulletPresetDisc {
-		t.Fatalf("unexpected bullet preset: %q", requests[0].CreateParagraphBullets.BulletPreset)
-	}
-	if got := requests[0].CreateParagraphBullets.Range; got.StartIndex != 5 || got.EndIndex != 11 {
-		t.Fatalf("unexpected bullet range: [%d,%d]", got.StartIndex, got.EndIndex)
-	}
-	if requests[1].UpdateTextStyle == nil {
-		t.Fatalf("expected second request to style bold list text, got %#v", requests[1])
-	}
-	if got := requests[1].UpdateTextStyle.Range; got.StartIndex != 5 || got.EndIndex != 10 {
+	if got := requests[0].UpdateTextStyle.Range; got.StartIndex != 7 || got.EndIndex != 12 {
 		t.Fatalf("unexpected bold range: [%d,%d]", got.StartIndex, got.EndIndex)
-	}
-	if requests[2].CreateParagraphBullets == nil {
-		t.Fatalf("expected third request to create numbered bullets, got %#v", requests[2])
-	}
-	if requests[2].CreateParagraphBullets.BulletPreset != "NUMBERED_DECIMAL_NESTED" {
-		t.Fatalf("unexpected numbered preset: %q", requests[2].CreateParagraphBullets.BulletPreset)
-	}
-	if got := requests[2].CreateParagraphBullets.Range; got.StartIndex != 11 || got.EndIndex != 18 {
-		t.Fatalf("unexpected numbered range: [%d,%d]", got.StartIndex, got.EndIndex)
 	}
 }

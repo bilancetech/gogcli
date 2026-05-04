@@ -7,25 +7,26 @@ Fast, script-friendly CLI for Gmail, Calendar, Chat, Classroom, Drive, Docs, Sli
 
 ## Features
 
-- **Gmail** - search threads/messages, send mail, view attachments, manage labels/drafts/filters/delegation/vacation settings, modify single messages, export filters, inspect history, and run Pub/Sub watch webhooks
+- **Gmail** - search threads/messages, send mail, view attachments, manage labels/drafts/filters/delegation/vacation settings, auto-reply once to matching mail, modify single messages, export filters, inspect history, and run Pub/Sub watch webhooks
 - **Email tracking** - track opens for `gog gmail send --track` with a small Cloudflare Worker backend
+- **Encrypted backups** - export Google account data to age-encrypted Git shards (`gog backup`)
 - **Calendar** - list/create/update/delete events, manage invitations, aliases, subscriptions, team calendars, free/busy/conflicts, propose new times, focus/OOO/working-location events, recurrence, and reminders
 - **Classroom** - manage courses, roster, coursework/materials, submissions, announcements, topics, invitations, guardians, profiles
 - **Chat** - list/find/create spaces, list messages/threads, send messages and DMs, and manage emoji reactions (Workspace-only)
-- **Drive** - list/search/upload/download files, replace uploads in-place, convert uploads, manage permissions/comments, organize folders, and list shared drives
+- **Drive** - list/search/upload/download files, scope search to folders or shared drives, replace uploads in-place, convert uploads (including Markdown to Google Doc), manage permissions/comments, organize folders, and list shared drives
 - **Contacts** - search/create/update contacts, including addresses, relations, org/title metadata, custom fields, Workspace directory, and other contacts
 - **Tasks** - manage tasklists and tasks: get/create/add/update/done/undo/delete/clear, plus repeat schedule materialization with RRULE aliases
 - **Sheets** - read/write/update spreadsheets, insert rows/cols, manage tabs and named ranges, format/merge/freeze/resize cells, read/write notes, inspect formats, find/replace text, list links, and create/export sheets
 - **Forms** - create/update forms, manage questions, inspect responses, and manage watches
 - **Apps Script** - create/get/bind projects, inspect content, and run functions
-- **Docs/Slides** - create/copy/export docs/slides, edit Docs by tab, import Markdown, do richer find-replace, export Docs as Markdown/HTML, and generate Slides from Markdown or templates
+- **Docs/Slides** - create/copy/export docs/slides, edit Docs by tab title or ID, import Markdown, do richer find-replace, export whole Docs or a single Docs tab, and generate Slides from Markdown or templates
 - **People** - profile lookup and directory search helpers
 - **Keep (Workspace only)** - list/get/search/create/delete notes and download attachments (service account + domain-wide delegation)
 - **Admin (Workspace only)** - Workspace Admin users/groups commands for common directory operations
 - **Groups** - list groups you belong to, view group members (Google Workspace)
 - **Local time** - quick local/UTC time display for scripts and agents
 - **Multiple accounts** - manage multiple Google accounts simultaneously, with account aliases and per-client OAuth buckets
-- **Command allowlist** - restrict top-level commands for sandboxed/agent runs
+- **Command allowlist + baked safety profiles** - restrict commands at runtime or build a fail-closed agent binary
 - **Secure credential storage** using OS keyring or encrypted on-disk keyring (configurable)
 - **Auto-refreshing tokens** - authenticate once, use indefinitely
 - **Flexible auth** - OAuth refresh tokens, ADC, direct access tokens, service accounts, manual/remote flows, `--extra-scopes`, and proxy-safe callbacks
@@ -46,6 +47,53 @@ brew install gogcli
 yay -S gogcli
 ```
 
+### Windows
+
+Download `gogcli_<version>_windows_amd64.zip` or `gogcli_<version>_windows_arm64.zip` from the GitHub release, extract `gog.exe`, and put that directory on `PATH`.
+
+PowerShell example:
+
+```powershell
+$dir = "$env:LOCALAPPDATA\Programs\gogcli"
+New-Item -ItemType Directory -Force $dir | Out-Null
+# Extract gog.exe into $dir, then add $dir to your user PATH.
+$userPath = [string][Environment]::GetEnvironmentVariable("Path", "User")
+if (($userPath -split ";") -notcontains $dir) {
+  [Environment]::SetEnvironmentVariable("Path", ($userPath.TrimEnd(";") + ";$dir").TrimStart(";"), "User")
+}
+$env:Path = "$env:Path;$dir"
+gog --version
+```
+
+### Docker
+
+Release images are published to GitHub Container Registry:
+
+```bash
+docker run --rm ghcr.io/steipete/gogcli:latest version
+```
+
+For authenticated automation in a container, mount a persistent config directory and use the encrypted file keyring:
+
+```bash
+docker volume create gogcli-config
+docker run --rm -it \
+  -e GOG_KEYRING_BACKEND=file \
+  -e GOG_KEYRING_PASSWORD='change-me' \
+  -v gogcli-config:/home/gog/.config/gogcli \
+  ghcr.io/steipete/gogcli:latest auth add you@gmail.com --services gmail,calendar,drive
+```
+
+Subsequent runs can reuse the same volume and password:
+
+```bash
+docker run --rm \
+  -e GOG_KEYRING_BACKEND=file \
+  -e GOG_KEYRING_PASSWORD='change-me' \
+  -v gogcli-config:/home/gog/.config/gogcli \
+  ghcr.io/steipete/gogcli:latest gmail labels list --account you@gmail.com
+```
+
 ### Build from Source
 
 ```bash
@@ -53,6 +101,8 @@ git clone https://github.com/steipete/gogcli.git
 cd gogcli
 make
 ```
+
+Source builds require the Go version declared in `go.mod` (currently Go 1.26.2). Older distro packages such as Ubuntu 24.04's Go 1.22 are too old; install a current Go toolchain or use a release package.
 
 Run:
 
@@ -93,8 +143,30 @@ Before adding an account, create OAuth2 credentials from Google Cloud Console:
    - Google Sheets API: https://console.cloud.google.com/apis/api/sheets.googleapis.com
    - Google Forms API: https://console.cloud.google.com/apis/api/forms.googleapis.com
    - Google Slides API: https://console.cloud.google.com/apis/api/slides.googleapis.com
+   If Google returns `accessNotConfigured` or says an API has not been used in the project, enable the API in the same Cloud project that owns your OAuth client JSON, then retry after the enablement propagates.
+
+   `gog` does not require Google Workspace for normal user automation. For a
+   consumer `gmail.com` account, a regular Google Cloud project plus a "Desktop
+   app" OAuth client is enough for Gmail, Calendar, Drive, Docs, Sheets, Slides,
+   Forms, Apps Script, Contacts/People, Tasks, and Classroom, as long as the
+   matching APIs are enabled in that same Cloud project and the account grants
+   the requested scopes.
+
+   Google Workspace or Cloud Identity is only required for APIs Google restricts
+   to managed domains, such as Chat, Cloud Identity Groups, Admin Directory, and
+   Keep/domain-wide-delegation flows. If you authenticate a consumer Gmail
+   account for those services, `gog` can store the scopes, but Google may still
+   reject live API calls because the account is not a Workspace account.
+
+   Apps Script has one extra user-side switch: after enabling
+   `script.googleapis.com` in the Cloud project, open
+   https://script.google.com/home/usersettings as the same Google account and
+   turn on the Google Apps Script API. Without that per-user toggle, Apps Script
+   calls can still return a 403 even when OAuth and the Cloud project API are
+   configured correctly.
 3. Configure OAuth consent screen: https://console.cloud.google.com/auth/branding
 4. If your app is in "Testing", add test users: https://console.cloud.google.com/auth/audience
+   - Testing-mode refresh tokens expire after 7 days for External apps that request Gmail/Drive/Calendar-style user-data scopes. For a personal consumer Gmail account, publish the OAuth app for long-lived refresh tokens; a small personal/unverified app can still show Google's unverified-app warning and user cap. Staying in Testing means re-authenticating every 7 days.
 5. Create OAuth client:
    - Go to https://console.cloud.google.com/auth/clients
    - Click "Create Client"
@@ -133,6 +205,7 @@ gog auth add you@gmail.com --services user --manual
 - The CLI prints an auth URL. Open it in a local browser.
 - After approval, copy the full loopback redirect URL from the browser address bar.
 - Paste that URL back into the terminal when prompted.
+- If the pasted URL is accepted but the command appears stuck before success, OAuth likely completed and token storage is blocked by the OS keyring. Current builds time out keyring operations with a recovery hint; run `gog auth doctor`, or on headless Linux use `GOG_KEYRING_BACKEND=file` with `GOG_KEYRING_PASSWORD=...` and retry.
 
 Split remote flow (`--remote`, useful for two-step/scripted handoff):
 
@@ -194,6 +267,17 @@ Verify tokens are usable (helps spot revoked/expired tokens):
 ```bash
 gog auth list --check
 ```
+
+If one file-keyring token cannot be decrypted, `gog auth list` still reports the readable accounts and prints the unreadable account with an error. Use `gog auth tokens list` to show token keys without decrypting them, then `gog auth tokens delete <email>` after confirming the affected account.
+
+Diagnose keyring/password drift and refresh-token failures:
+
+```bash
+gog auth doctor
+gog auth doctor --check
+```
+
+OAuth tokens store Google's stable OIDC subject (`sub`) alongside the account email. If Google renames an account email, re-authorizing the new address migrates matching subject-keyed tokens, aliases, client mappings, and defaults instead of orphaning the old email entry.
 
 Accounts can be authorized either via OAuth refresh tokens or Workspace service accounts (domain-wide delegation). If a service account key is configured for an account, it takes precedence over OAuth refresh tokens (see `gog auth list`).
 
@@ -257,6 +341,8 @@ Backends:
 - `keychain`: macOS Keychain (recommended on macOS; avoids password management).
 - `file`: encrypted on-disk keyring (requires a password).
 
+On macOS, Keychain operations time out with a recovery hint if a permission prompt cannot surface; run the command from Terminal and choose "Always Allow", or switch to the file backend for headless runs.
+
 Set backend via command (writes `keyring_backend` into `config.json`):
 
 ```bash
@@ -272,6 +358,8 @@ gog auth keyring
 ```
 
 Non-interactive runs (CI/ssh): file backend requires `GOG_KEYRING_PASSWORD`.
+The file backend uses portable encoded filenames for stored keys, so account tokens work on Windows even when key names contain colons.
+If you see `aes.KeyUnwrap(): integrity check failed`, first run `gog auth doctor`; the usual cause is that different shells/services/agents are using different `GOG_KEYRING_PASSWORD` values for the same encrypted token files.
 
 ```bash
 export GOG_KEYRING_PASSWORD='...'
@@ -395,8 +483,10 @@ Service scope matrix (auto-generated; run `go run scripts/gen-auth-services-md.g
 | people | yes | People API | `profile` | OIDC profile scope |
 | forms | yes | Forms API | `https://www.googleapis.com/auth/forms.body`<br>`https://www.googleapis.com/auth/forms.responses.readonly` |  |
 | appscript | yes | Apps Script API | `https://www.googleapis.com/auth/script.projects`<br>`https://www.googleapis.com/auth/script.deployments`<br>`https://www.googleapis.com/auth/script.processes` |  |
+| ads | yes | Google Ads API | `https://www.googleapis.com/auth/adwords` | OAuth scope only |
 | groups | no | Cloud Identity API | `https://www.googleapis.com/auth/cloud-identity.groups.readonly` | Workspace only |
 | keep | no | Keep API | `https://www.googleapis.com/auth/keep` | Workspace only; service account (domain-wide delegation) |
+| admin | no | Admin SDK Directory API | `https://www.googleapis.com/auth/admin.directory.user`<br>`https://www.googleapis.com/auth/admin.directory.group`<br>`https://www.googleapis.com/auth/admin.directory.group.member` | Workspace only; service account with domain-wide delegation required |
 <!-- auth-services:end -->
 
 ### Service Accounts (Workspace only)
@@ -460,7 +550,10 @@ gog keep delete <noteId> --account you@yourdomain.com --force
 - `GOG_PLAIN` - Default plain output
 - `GOG_COLOR` - Color mode: `auto` (default), `always`, or `never`
 - `GOG_TIMEZONE` - Default output timezone for Calendar/Gmail (IANA name, `UTC`, or `local`)
-- `GOG_ENABLE_COMMANDS` - Comma-separated allowlist of top-level commands (e.g., `calendar,tasks`)
+- `GOG_ENABLE_COMMANDS` - Comma-separated allowlist of commands; dot paths allowed (e.g., `calendar,tasks,gmail.search`)
+- `GOG_DISABLE_COMMANDS` - Comma-separated denylist of commands; dot paths allowed (e.g., `gmail.send,gmail.drafts.send`)
+- `GOG_GMAIL_NO_SEND` - Block Gmail send operations
+- `GOG_KEYRING_SERVICE_NAME` - Override the keyring namespace/service name (default: `gogcli`)
 
 ### Config File (JSON5)
 
@@ -493,6 +586,11 @@ Example (JSON5 supports comments and trailing commas):
   client_domains: {
     "example.com": "work",
   },
+  // Optional safety guard: block Gmail send operations
+  gmail_no_send: true,
+  no_send_accounts: {
+    "agent@example.com": true,
+  },
 }
 ```
 
@@ -502,9 +600,9 @@ Example (JSON5 supports comments and trailing commas):
 gog config path
 gog config list
 gog config keys
-gog config get default_timezone
-gog config set default_timezone UTC
-gog config unset default_timezone
+gog config get timezone
+gog config set timezone UTC
+gog config unset timezone
 ```
 
 ### Account Aliases
@@ -517,16 +615,35 @@ gog auth alias unset work
 
 Aliases work anywhere you pass `--account` or `GOG_ACCOUNT` (reserved: `auto`, `default`).
 
-### Command Allowlist (Sandboxing)
+### Command Guards (Sandboxing)
 
 ```bash
 # Only allow calendar + tasks commands for an agent
 gog --enable-commands calendar,tasks calendar events --today
 
+# Allow one Gmail read path, but block Gmail writes
+gog --enable-commands gmail.search --disable-commands gmail.send gmail search from:me
+
 # Same via env
 export GOG_ENABLE_COMMANDS=calendar,tasks
+export GOG_DISABLE_COMMANDS=gmail.send,gmail.drafts.send
 gog tasks list <tasklistId>
+
+# Extra Gmail send guard
+gog --gmail-no-send gmail send --to someone@example.com --subject Test --body Test
+gog config no-send set agent@example.com
 ```
+
+For stronger isolation, build a dedicated binary with an embedded safety profile:
+
+```bash
+./build-safe.sh safety-profiles/agent-safe.yaml -o bin/gog-agent-safe
+./build-safe.sh safety-profiles/readonly.yaml -o bin/gog-readonly
+```
+
+Baked profiles are checked after CLI parsing and before any command runs. They are
+fail-closed and cannot be changed by config, environment variables, or runtime
+allowlist flags. See `docs/safety-profiles.md`.
  
 ## Security
 
@@ -551,6 +668,7 @@ Options:
 - **Force Keychain:** `GOG_KEYRING_BACKEND=keychain` (disables any file-backend fallback).
 - **Avoid Keychain prompts entirely:** `GOG_KEYRING_BACKEND=file` (stores encrypted entries on disk under your config dir).
   - To avoid password prompts too (CI/non-interactive): set `GOG_KEYRING_PASSWORD=...` (tradeoff: secret in env).
+- **Use a separate keyring namespace:** `GOG_KEYRING_SERVICE_NAME=custom-gog` (default: `gogcli`).
 
 ### Best Practices
 
@@ -569,17 +687,22 @@ Some open source Google CLIs ship a pre-configured OAuth client ID/secret copied
 - Your own OAuth Desktop client JSON via `gog auth credentials ...` + `gog auth add ...`
 - Google Workspace service accounts with domain-wide delegation (Workspace only)
 
+For consumer Gmail accounts, there is no `gogcli` workaround for Google's OAuth publishing status. If the OAuth app is External + Testing and requests Gmail or other user-data scopes, Google expires the refresh token after 7 days. To avoid weekly re-auth, move the OAuth app to production/published status; for personal use under Google's unverified-app cap, this can still work without shipping a public app. Workspace Internal apps and service-account delegation only help Workspace-owned accounts, not `@gmail.com` mailboxes.
+
 ## Commands
 
 Flag aliases:
 - `--out` also accepts `--output`.
 - `--out-dir` also accepts `--output-dir` (Gmail thread attachment downloads).
+- Drive download/export commands accept `--out -` to write file bytes to stdout; do not combine this with `--json`.
 
 ### Authentication
 
 ```bash
 gog auth credentials <path>           # Store OAuth client credentials
 gog auth credentials list             # List stored OAuth client credentials
+gog auth credentials remove work      # Remove one OAuth client plus its tokens/domain mappings
+gog auth credentials remove all       # Remove all stored OAuth clients plus their tokens/domain mappings
 gog --client work auth credentials <path>  # Store named OAuth client credentials
 gog auth add <email>                  # Authorize and store refresh token
 gog auth add <email> --services gmail --gmail-scope readonly  # Gmail read-only token
@@ -619,8 +742,10 @@ gog gmail search 'newer_than:7d' --max 10
 gog gmail thread get <threadId>
 gog gmail thread get <threadId> --download              # Download attachments to current dir
 gog gmail thread get <threadId> --download --out-dir ./attachments
+gog gmail thread get <threadId> --sanitize-content      # Agent-oriented sanitized content output
 gog gmail get <messageId>
 gog gmail get <messageId> --format metadata
+gog gmail get <messageId> --sanitize-content            # Agent-oriented sanitized content output
 gog gmail attachment <messageId> <attachmentId>
 gog gmail attachment <messageId> <attachmentId> --out ./attachment.bin
 gog gmail url <threadId>              # Print Gmail web URL
@@ -631,6 +756,12 @@ gog gmail send --to a@b.com --subject "Hi" --body "Plain fallback"
 gog gmail send --to a@b.com --subject "Hi" --body-file ./message.txt
 gog gmail send --to a@b.com --subject "Hi" --body-file -   # Read body from stdin
 gog gmail send --to a@b.com --subject "Hi" --body "Plain fallback" --body-html "<p>Hello</p>"
+gog gmail send --to a@b.com --subject "Hi" --body "Hello" --signature
+gog gmail send --to a@b.com --subject "Hi" --body "Hello" --from alias@example.com --signature
+gog gmail send --to a@b.com --subject "Hi" --body "Hello" --signature-from alias@example.com
+gog gmail send --to a@b.com --subject "Hi" --body "Hello" --signature-file ./signature.html
+gog gmail forward <messageId> --to a@b.com --note "FYI"
+gog gmail forward <messageId> --to a@b.com --skip-attachments
 # Reply + include quoted original message (auto-generates HTML quote unless you pass --body-html)
 gog gmail send --reply-to-message-id <messageId> --quote --to a@b.com --subject "Re: Hi" --body "My reply"
 # Draft reply + quote (create requires explicit reply target)
@@ -644,17 +775,23 @@ gog gmail drafts create --to a@b.com --subject "Draft" --body "Body"
 gog gmail drafts update <draftId> --subject "Draft" --body "Body"
 gog gmail drafts update <draftId> --to a@b.com --subject "Draft" --body "Body"
 gog gmail drafts send <draftId>
+gog gmail autoreply 'from:alerts@example.com newer_than:7d' --body-file ./reply.txt --label AutoReplied --dry-run
 
 # Labels
 gog gmail labels list
 gog gmail labels get INBOX --json  # Includes message counts
 gog gmail labels create "My Label"
+gog gmail labels create "Projects/Review"  # Nested Gmail label
+# Gmail rejects slash/hyphen collisions such as Projects/Review when Projects-Review exists.
 gog gmail labels rename "Old Label" "New Label"
+gog gmail labels style "My Label" --text-color "#ffffff" --background-color "#4285f4"
 gog gmail labels modify <threadId> --add STARRED --remove INBOX
 gog gmail labels delete <labelIdOrName>  # Deletes user label (guards system labels; confirm)
 
 # Batch operations
-gog gmail batch delete <messageId> <messageId>
+gog gmail trash <messageId> <messageId>          # Move to trash; works with gmail.modify
+gog gmail trash --query 'older_than:30d' --max 100
+gog gmail batch delete <messageId> <messageId>   # Permanent delete; requires https://mail.google.com/
 gog gmail batch modify <messageId> <messageId> --add STARRED --remove INBOX
 
 # Filters
@@ -695,6 +832,93 @@ Gmail watch (Pub/Sub push):
 - `watch serve --fetch-delay` defaults to `3s` and helps avoid Gmail History indexing races after push delivery.
 - `watch serve --exclude-labels` defaults to `SPAM,TRASH`; IDs are case-sensitive.
 
+Sanitized Gmail content (`--sanitize-content`, alias `--safe`):
+- Converts HTML bodies to text with an HTML parser and removes script/style content.
+- Replaces HTTP(S) URLs with `[url removed]` after decoding HTML entities.
+- Omits raw Gmail `payload`/RFC822 data and unsubscribe links from sanitized JSON envelopes.
+- Rejects `gmail get --format raw`, because raw output cannot be sanitized.
+
+This reduces prompt-injection, phishing-link, and tracking-link exposure for agents.
+It is not a sandbox; use command guards or baked safety profiles for command
+boundaries.
+
+### Encrypted Backup
+
+```bash
+gog backup init --repo ~/Projects/backup-gog --remote https://github.com/steipete/backup-gog.git
+gog backup push --services all --account you@gmail.com
+gog backup status
+gog backup verify
+gog backup cat data/gmail/<account-hash>/labels.jsonl.gz.age --pretty
+gog backup export --out ~/Documents/gog-backup-export
+gog backup export --no-pull --out ~/Library/CloudStorage/Dropbox/backup/gog --gmail-format markdown
+```
+
+For a bounded first run:
+
+```bash
+gog backup push --services gmail --account you@gmail.com --query 'newer_than:7d' --max 25
+```
+
+Backups use age-encrypted JSONL gzip shards under `data/` and completed Gmail
+checkpoint shards under `checkpoints/`. `gog` stores the private age identity
+locally at `~/.gog/age.key`; GitHub only receives public `age1...` recipients,
+`manifest.json`, and encrypted `*.jsonl.gz.age` payloads.
+The private `AGE-SECRET-KEY-...` value must stay local or in a password manager.
+
+Supported backup services are `gmail`, `gmail-settings`, `calendar`,
+`contacts`, `tasks`, `drive`, `workspace`, `appscript`, `chat`, `classroom`,
+`groups`, `admin`, and `keep`; `all` expands to those services. Drive stores
+metadata, permissions, comments, revisions, and exported Google-native file
+content by default. Non-Google binary Drive files are metadata-only unless
+`--drive-binary-contents` is set. `--drive-content-timeout` turns a stuck
+per-file export into an encrypted error row instead of wedging the run. Gmail
+raw-message fetches and message-list pages use a local cache by default so
+interrupted full-mailbox backups can resume. Full Gmail runs build encrypted
+message shards from cached messages instead of keeping the whole mailbox in
+memory; progress is written to stderr while stdout stays parseable. Cached
+Gmail runs also push incomplete encrypted checkpoint commits during long fetches
+by default (`--gmail-checkpoint-rows`, `--gmail-checkpoint-interval`,
+`--no-gmail-checkpoints`). Checkpoint files are split by row count and a
+conservative plaintext byte ceiling to avoid GitHub blob rejections. Checkpoint
+commits push through a single ordered background queue so cached Gmail fetching
+can continue while GitHub uploads run; the final completed backup waits for the
+queue to drain before updating the authoritative manifest. When a cached Gmail
+run completes, the final manifest promotes the completed checkpoint message
+shards instead of re-encrypting the mailbox into a second giant Git push.
+Checkpoints live under `checkpoints/` and do not become authoritative until the
+final `manifest.json` references them. Use `--gmail-refresh-cache` to force a
+refetch.
+Workspace inventories
+Docs/Sheets/Slides and backs up Forms/responses discovered through Drive; add
+`--workspace-native` for full native Docs/Sheets/Slides API JSON.
+Optional Workspace-only services use `--best-effort` by default, recording
+permission/auth errors as encrypted error shards instead of stopping the run.
+
+Use `gog backup cat` to decrypt one shard as JSONL, or `gog backup export` to
+write a local plaintext copy. By default Gmail messages export as `.eml` files.
+Use `--gmail-format markdown` for a readable mirror with `message.md` files and
+extracted `attachments/` folders, or `--gmail-format both` to keep Markdown and
+`.eml` side by side. `--gmail-attachments none` keeps Markdown notes without
+writing attachment files. Drive contents export as normal files under
+`drive/<account-hash>/files/` with an `index.jsonl`; other services export as
+verified JSONL under `raw/`. That export is intentionally unencrypted; keep it
+out of Git, shared folders, and cloud sync unless that is intentional.
+Use `--no-pull` when exporting from a local backup repository that another
+process is already updating.
+
+`manifest.json` is intentionally cleartext for cheap status and verification.
+It exposes metadata: export time, service names, account hashes, shard paths,
+row counts, encrypted byte sizes, plaintext verification hashes, backup cadence,
+and which shards changed. It does not contain email bodies, subjects, senders,
+recipients, raw MIME, labels, Drive filenames, contacts, or event titles.
+
+Security boundary: GitHub cannot read Google content without the age identity.
+Repository writers can still replace backup contents with different encrypted
+data, so keep write access tight and review unexpected backup commits. If the
+age identity leaks, rotate recipients and re-encrypt; old Git history may still
+contain shards decryptable with the leaked key. See `docs/backup.md`.
+
 ### Email Tracking
 
 Track when recipients open your emails:
@@ -723,6 +947,7 @@ Docs: `docs/email-tracking.md` (setup/deploy) + `docs/email-tracking-worker.md` 
 ```bash
 # Calendars
 gog calendar calendars
+gog calendar create-calendar "Team Calendar" --timezone Europe/London
 gog calendar acl <calendarId>         # List access control rules
 gog calendar colors                   # List available event/calendar colors
 gog calendar time --timezone America/New_York
@@ -785,6 +1010,11 @@ gog calendar create <calendarId> \
   --attendees "alice@example.com,bob@example.com" \
   --location "Zoom"
 
+gog calendar create <calendarId> \
+  --summary "Flight" \
+  --from 2026-08-13T13:40:00+02:00 --start-timezone Europe/Rome \
+  --to 2026-08-13T17:00:00-04:00 --end-timezone America/New_York
+
 gog calendar update <calendarId> <eventId> \
   --summary "Updated Meeting" \
   --from 2025-01-15T11:00:00Z \
@@ -799,6 +1029,10 @@ gog calendar create <calendarId> \
 
 gog calendar update <calendarId> <eventId> \
   --send-updates externalOnly
+
+# Move an event to another calendar, changing the event organizer.
+gog calendar move <calendarId> <eventId> <destinationCalendarId> \
+  --send-updates all
 
 # Default: no attendee notifications unless you pass --send-updates.
 gog calendar delete <calendarId> <eventId> \
@@ -873,6 +1107,8 @@ gog time now --timezone UTC
 
 ### Drive
 
+When you turn a Markdown file into a Google Doc, use **`--convert`** (extension-based) or **`--convert-to doc`**. Leading YAML frontmatter between **`---`** lines is **removed before upload** unless you pass **`--keep-frontmatter`**. That step only looks for opening and closing delimiter lines—it is **not** a full YAML parse, so odd edge cases may need **`--keep-frontmatter`** or editing the file first.
+
 ```bash
 # List and search
 gog drive ls --max 20
@@ -881,6 +1117,8 @@ gog drive ls --all --max 20               # List across all accessible files (ca
 gog drive ls --no-all-drives            # Only list from "My Drive"
 gog drive search "invoice" --max 20
 gog drive search "invoice" --no-all-drives
+gog drive search "invoice" --parent <folderId>       # Direct children of one folder
+gog drive search "invoice" --drive <sharedDriveId>   # Search within one shared drive
 gog drive search "mimeType = 'application/pdf'" --raw-query
 gog drive get <fileId>                # Get file metadata
 gog drive url <fileId>                # Print Drive web URL
@@ -892,10 +1130,16 @@ gog drive upload ./path/to/file --replace <fileId>  # Replace file content in-pl
 gog drive upload ./report.docx --convert
 gog drive upload ./chart.png --convert-to sheet
 gog drive upload ./report.docx --convert --name report.docx
+gog drive upload ./notes.md --convert                              # Markdown → Google Doc (or use --convert-to doc)
+
+# Large non-JSON uploads print progress on stderr.
 gog drive download <fileId> --out ./downloaded.bin
 gog drive download <fileId> --format pdf --out ./exported.pdf     # Google Workspace files only
 gog drive download <fileId> --format docx --out ./doc.docx
+gog drive download <fileId> --format md --out ./note.md            # Google Doc → Markdown
+gog drive download <fileId> --tab "Notes" --format pdf --out ./notes.pdf
 gog drive download <fileId> --format pptx --out ./slides.pptx
+gog drive download <fileId> --out - > downloaded.bin
 
 # Organize
 gog drive mkdir "New Folder"
@@ -909,11 +1153,21 @@ gog drive delete <fileId> --permanent # Permanently delete
 gog drive permissions <fileId>
 gog drive share <fileId> --to user --email user@example.com --role reader
 gog drive share <fileId> --to user --email user@example.com --role writer
+gog drive share <fileId> --to user --email reviewer@example.com --role commenter
 gog drive share <fileId> --to domain --domain example.com --role reader
 gog drive unshare <fileId> --permission-id <permissionId>
 
 # Shared drives (Team Drives)
 gog drive drives --max 100
+
+# Request extra fields from the Drive API (closes #486)
+gog drive ls --fields "files(id,name,thumbnailLink),nextPageToken"
+gog drive get <fileId> --fields "id,name,thumbnailLink,imageMediaMetadata"
+
+# Raw API dump (lossless JSON for scripting/LLMs)
+gog drive raw <fileId>                            # fields=*, sensitive fields redacted by default
+gog drive raw <fileId> --fields "id,name,thumbnailLink"  # honors user-named fields verbatim
+gog drive raw <fileId> --pretty
 ```
 
 ### Docs / Slides / Sheets
@@ -927,19 +1181,25 @@ gog docs create "My Doc" --file ./doc.md            # Import markdown
 gog docs create "My Doc" --pageless
 gog docs copy <docId> "My Doc Copy"
 gog docs export <docId> --format pdf --out ./doc.pdf
+gog docs export <docId> --tab "Notes" --format pdf --out ./notes.pdf
+gog docs export <docId> --format txt --out - > doc.txt
 gog docs list-tabs <docId>
 gog docs cat <docId> --tab "Notes"
 gog docs cat <docId> --all-tabs
 gog docs add-tab <docId> "Notes"
 gog docs add-tab <docId> "Sub-note" --parent-tab-id t.notes --index 0
 gog docs update <docId> --text "Append this later"
-gog docs update <docId> --text "Only in this tab" --tab-id t.notes
+gog docs update <docId> --text "Only in this tab" --tab "Notes"
 gog docs update <docId> --file ./insert.txt --index 25 --pageless
 gog docs write <docId> --text "Fresh content"
-gog docs write <docId> --text "Rewrite one tab" --tab-id t.notes
+gog docs write <docId> --text "Rewrite one tab" --tab "Notes"
 gog docs write <docId> --file ./body.txt --append --pageless
+gog docs write <docId> --file ./body.md --replace --markdown
+gog docs write <docId> --file ./body.md --append --markdown
 gog docs find-replace <docId> "old" "new"
-gog docs find-replace <docId> "old" "new" --tab-id t.notes
+gog docs find-replace <docId> "old" "new" --tab "Notes"
+gog docs raw <docId>                                # Lossless JSON dump of Documents.Get (LLM/scripting)
+gog docs raw <docId> --pretty
 
 # Slides
 gog slides info <presentationId>
@@ -952,6 +1212,12 @@ gog slides list-slides <presentationId>
 gog slides add-slide <presentationId> ./slide.png --notes "Speaker notes"
 gog slides update-notes <presentationId> <slideId> --notes "Updated notes"
 gog slides replace-slide <presentationId> <slideId> ./new-slide.png --notes "New notes"
+gog slides insert-text <presentationId> <objectId> "Text to insert"
+gog slides insert-text <presentationId> <objectId> - < long-content.md
+gog slides insert-text <presentationId> <objectId> "New body" --replace
+gog slides replace-text <presentationId> "{{name}}" "Acme Corp"
+gog slides replace-text <presentationId> "TODO" "DONE" --match-case --page <slideId1> --page <slideId2>
+gog slides raw <presentationId>                     # Lossless JSON dump of Presentations.Get
 
 # Sheets
 gog sheets copy <spreadsheetId> "My Sheet Copy"
@@ -968,10 +1234,38 @@ gog sheets notes <spreadsheetId> 'Sheet1!A1:B10'
 gog sheets find-replace <spreadsheetId> "old" "new"
 gog sheets find-replace <spreadsheetId> "old" "new" --sheet Sheet1 --match-entire
 gog sheets links <spreadsheetId> 'Sheet1!A1:B10'
-gog sheets add-tab <spreadsheetId> <tabName>
+gog sheets add-tab <spreadsheetId> <tabName> --index 0
 gog sheets rename-tab <spreadsheetId> <oldName> <newName>
 gog sheets delete-tab <spreadsheetId> <tabName> --force
+gog sheets raw <spreadsheetId>                       # Lossless JSON dump of Spreadsheets.Get
+gog sheets raw <spreadsheetId> --include-grid-data   # Include cell-level data (off by default)
+
+# Other raw dumps (gmail, calendar, people, contacts, tasks, forms)
+gog gmail raw <messageId>                            # Lossless JSON dump of Users.Messages.Get (default format=full)
+gog gmail raw <messageId> --format raw               # Gmail's native format=raw (base64url RFC822)
+gog calendar raw <calendarId> <eventId>              # Lossless JSON dump of Events.Get
+gog people raw people/<resourceName>                 # Lossless JSON dump of People.Get
+gog contacts raw people/<resourceName>               # Same endpoint, exposed under the contacts group
+gog tasks raw <tasklistId> <taskId>                  # Lossless JSON dump of Tasks.Get
+gog forms raw <formId>                               # Lossless JSON dump of Forms.Get
 ```
+
+**Raw vs other read subcommands.** Use `raw` when you need the full
+canonical Google API response as JSON (e.g. feeding a doc into an LLM,
+or scripting against structural fields `cat`/`structure` drop). Other
+read commands are lossier on purpose:
+
+- `docs info`, `sheets metadata`, `slides info`, `drive get` → metadata only (cheap)
+- `docs cat`, `docs structure` → plain text / simplified structure
+- `docs export`, `sheets export`, `slides export`, `drive download` → converted file formats (pdf/docx/xlsx/pptx/md)
+- `<group> raw` → full API response as JSON (verbose, lossless)
+
+`drive raw` defaults to `fields=*` and redacts a small set of
+capability/token-shaped fields (thumbnailLink, webContentLink,
+exportLinks, resourceKey, appProperties, properties,
+contentHints.thumbnail.image). When `--fields` is supplied the response
+is returned verbatim — the user named the field, they get it. See
+[`docs/raw-audit.md`](docs/raw-audit.md) for the redaction rationale.
 
 ### Contacts
 
@@ -981,6 +1275,8 @@ gog contacts list --max 50
 gog contacts search "Ada" --max 50
 gog contacts get people/<resourceName>
 gog contacts get user@example.com     # Get by email
+gog contacts export user@example.com --out contact.vcf
+gog contacts export --all --out contacts.vcf
 
 # Other contacts (people you've interacted with)
 gog contacts other list --max 50
@@ -993,6 +1289,7 @@ gog contacts create \
   --email "john@example.com" \
   --phone "+1234567890" \
   --address "12 St James's Square, London" \
+  --gender "male" \
   --relation "spouse=Jane Doe"
 
 gog contacts update people/<resourceName> \
@@ -1000,6 +1297,7 @@ gog contacts update people/<resourceName> \
   --email "jane@example.com" \
   --address "1 Infinite Loop, Cupertino" \
   --birthday "1990-05-12" \
+  --gender "female" \
   --notes "Met at WWDC" \
   --relation "friend=Bob"
 
@@ -1088,6 +1386,14 @@ gog sheets named-ranges add <spreadsheetId> MyCols 'Sheet1!A:C'
 gog sheets named-ranges update <spreadsheetId> MyNamedRange --name MyNamedRange2
 gog sheets named-ranges delete <spreadsheetId> MyNamedRange2
 
+# Charts
+gog sheets chart list <spreadsheetId>
+gog sheets chart get <spreadsheetId> <chartId> --json > chart.json
+gog sheets chart create <spreadsheetId> --spec-json @chart.json
+gog sheets chart create <spreadsheetId> --spec-json '{"title":"Revenue","basicChart":{"chartType":"COLUMN"}}' --sheet Sheet1 --anchor E10
+gog sheets chart update <spreadsheetId> <chartId> --spec-json '{"title":"New Title","basicChart":{"chartType":"PIE"}}'
+gog sheets chart delete <spreadsheetId> <chartId>
+
 # Insert rows/cols
 gog sheets insert <spreadsheetId> "Sheet1" rows 2 --count 3
 gog sheets insert <spreadsheetId> "Sheet1" cols 3 --after
@@ -1100,7 +1406,7 @@ gog sheets links <spreadsheetId> 'Sheet1!A1:B10'   # Includes rich-text links
 gog sheets create "My New Spreadsheet" --sheets "Sheet1,Sheet2"
 
 # Tab management
-gog sheets add-tab <spreadsheetId> <tabName>
+gog sheets add-tab <spreadsheetId> <tabName> --index 0
 gog sheets rename-tab <spreadsheetId> <oldName> <newName>
 gog sheets delete-tab <spreadsheetId> <tabName>          # use --force to skip confirmation
 ```
@@ -1162,6 +1468,7 @@ gog people relations people/<userId> --type manager
 # Spaces
 gog chat spaces list
 gog chat spaces find "Engineering"
+gog chat spaces find "Engineering" --exact
 gog chat spaces create "Engineering" --member alice@company.com --member bob@company.com
 
 # Messages
@@ -1293,7 +1600,13 @@ gog docs export <docId> --format docx --out ./doc.docx
 gog docs export <docId> --format txt --out ./doc.txt
 gog docs export <docId> --format md --out ./doc.md
 gog docs export <docId> --format html --out ./doc.html
+gog docs export <docId> --format txt --out - > doc.txt
+gog docs export <docId> --tab "Notes" --format md --out ./notes.md
+```
 
+`docs export` uses Drive export for whole-document downloads. `--tab` is experimental: Google Drive cannot export a single Docs tab, so gog resolves the tab title or ID with the Docs API and downloads that tab through Google's undocumented Docs web export endpoint. Use `gog docs list-tabs <docId>` to see tab titles/IDs. Tab export supports `pdf`, `docx`, `txt`, `md`, and `html`, including `--out -`; if Google changes that web endpoint, gog fails before writing sign-in HTML or unrelated redirect content.
+
+```bash
 # Sed-style regex editing with Markdown formatting (sedmat)
 gog docs sed <docId> 's/pattern/replacement/g'
 
@@ -1332,6 +1645,22 @@ gog slides create-from-template <templateId> "Q1 Report" \
   --replace "revenue=$1.2M" \
   --replace "growth=15%"
 
+# Create from Markdown
+cat > slides.md <<'EOF'
+## Roadmap
+
+- Ship auth migration
+- Polish backup restore
+
+---
+
+## Launch Notes
+
+Short paragraphs become body text.
+EOF
+
+gog slides create-from-markdown "Roadmap" --content-file ./slides.md
+
 # Use JSON file for many replacements
 cat > replacements.json <<EOF
 {
@@ -1345,7 +1674,50 @@ EOF
 
 gog slides create-from-template <templateId> "Monthly Report" \
   --replacements replacements.json
+
+# Read slide content (text, notes, images)
+gog slides read-slide <presentationId> <slideId>
+
+# Include grouped elements, word art, and tables
+gog slides read-slide <presentationId> <slideId> --recursive --json
+
+# Get a rendered slide thumbnail URL
+gog slides thumbnail <presentationId> <slideId>
+
+# Download a rendered slide thumbnail
+gog slides thumbnail <presentationId> <slideId> --output ./slide.png
+
+# Control thumbnail size and format
+gog slides thumbnail <presentationId> <slideId> --size medium --format jpeg --output ./slide.jpg
+
+# Insert text into an existing text-capable element (shape or table cell)
+gog slides insert-text <presentationId> <objectId> "Hello, world"
+
+# Insert at a specific position in the element's existing text
+gog slides insert-text <presentationId> <objectId> " (inserted)" --insertion-index 12
+
+# Replace the element's existing text wholesale (DeleteText + InsertText in one batch)
+gog slides insert-text <presentationId> <objectId> "Brand-new body copy" --replace
+
+# Read long content from stdin
+cat long-content.md | gog slides insert-text <presentationId> <objectId> -
+
+# Preview the batchUpdate request body without executing it
+gog slides insert-text <presentationId> <objectId> "demo" --replace --dry-run
+
+# Find-and-replace across the whole deck
+gog slides replace-text <presentationId> "{{customer_name}}" "Acme Corp"
+
+# Case-sensitive match, restricted to specific slides
+gog slides replace-text <presentationId> "TODO" "DONE" \
+  --match-case \
+  --page <slideId1> --page <slideId2>
+
+# Preview the replace request without executing it
+gog slides replace-text <presentationId> "old" "new" --dry-run
 ```
+
+`slides create-from-markdown` uses `---` lines as slide separators and `##` headings as slide titles. It supports bullets, paragraphs, and fenced code blocks; see [docs/slides-markdown.md](docs/slides-markdown.md).
 
 ## Output Formats
 
@@ -1361,7 +1733,7 @@ THREAD_ID           SUBJECT                           FROM                  DATE
 16d1c2b3a4e5f6d7    Project update                    bob@example.com       2025-01-08
 ```
 
-Message-level search (one row per email; add `--include-body` to fetch/decode bodies):
+Message-level search (one row per email; add `--include-body` to fetch/decode bodies, `--body-format html` to prefer HTML bodies, or `--full` for untruncated text output):
 
 ```bash
 $ gog gmail messages search 'newer_than:7d' --max 3
@@ -1369,6 +1741,10 @@ ID                  THREAD             SUBJECT                           FROM   
 18f1a2b3c4d5e6f7    9e8d7c6b5a4f3e2d    Meeting notes                     alice@example.com     2025-01-10
 17e1d2c3b4a5f6e7    9e8d7c6b5a4f3e2d    Invoice #12345                    billing@vendor.com    2025-01-09
 16d1c2b3a4e5f6d7    7f6e5d4c3b2a1908    Project update                    bob@example.com       2025-01-08
+```
+
+```bash
+$ gog gmail messages search 'from:newsletter@example.com' --include-body --body-format html --json
 ```
 
 ### JSON
@@ -1406,7 +1782,7 @@ $ gog gmail messages search 'newer_than:7d' --max 3 --json
 ```
 
 ```bash
-$ gog gmail messages search 'newer_than:7d' --max 1 --include-body --json
+$ gog gmail messages search 'newer_than:7d' --max 1 --full --json
 {
   "messages": [
     {
@@ -1551,7 +1927,9 @@ gog --verbose gmail search 'newer_than:7d'
 All commands support these flags:
 
 - `--account <email|alias|auto>` - Account to use (overrides GOG_ACCOUNT)
-- `--enable-commands <csv>` - Allowlist top-level commands (e.g., `calendar,tasks`)
+- `--enable-commands <csv>` - Allowlist commands; dot paths allowed (e.g., `calendar,tasks,gmail.search`)
+- `--disable-commands <csv>` - Denylist commands; dot paths allowed (e.g., `gmail.send,gmail.drafts.send`)
+- `--gmail-no-send` - Block Gmail send operations
 - `--json` - Output JSON to stdout (best for scripting)
 - `--plain` - Output stable, parseable text to stdout (TSV; no colors)
 - `--color <mode>` - Color mode: `auto`, `always`, or `never` (default: auto)
@@ -1623,6 +2001,25 @@ Pinned tools (installed into `.tools/`):
 - Test: `make test`
 
 CI runs format checks, tests, and lint on push/PR.
+
+Documentation is split between hand-written topic pages in `docs/` and generated
+per-command pages in `docs/commands/`. Every CLI command should have a docs page;
+do not hand-edit generated command pages. Regenerate them from the live schema
+whenever command names, flags, aliases, arguments, or help text change:
+
+```bash
+make docs-commands
+```
+
+Build the GitHub Pages site locally:
+
+```bash
+make docs-site
+open dist/docs-site/index.html
+```
+
+The Pages workflow rebuilds the command pages and publishes the static site from
+`dist/docs-site` using the custom domain in `docs/CNAME`.
 
 ### Integration Tests (Live Google APIs)
 
