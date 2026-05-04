@@ -10,6 +10,7 @@
 - Docs: support tab-scoped Markdown append and find-replace flows. (#541) — thanks @donbowman.
 
 ### Fixed
+- Agent safety: compile baked safety profile policies into generated hash switches so raw allow/deny rule strings are not embedded as patchable YAML. (#540) — thanks @drewburchfield.
 - Backup: promote completed Gmail checkpoint shards into the final manifest and byte-split fallback Gmail message shards so full-mailbox runs do not create GitHub-rejected blobs or giant final pushes.
 - Backup export: stream decrypted shards one at a time, preserve resumable Gmail Markdown mirrors, handle very large JSONL rows, and write Markdown fallbacks for malformed MIME messages instead of aborting full-mailbox exports.
 - Calendar: accept documented `calendar events list` / `ls` selector forms with positional calendar IDs, `--cal`, `--calendars`, and `--all`. (#546) — thanks @BCudeOpenClaw.
