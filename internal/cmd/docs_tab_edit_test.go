@@ -101,22 +101,29 @@ func TestDocsWriteUpdate_WithTab(t *testing.T) {
 		t.Fatalf("unexpected append insert location: %#v", got)
 	}
 
+	if err := runKong(t, &DocsWriteCmd{}, []string{"doc1", "--text", "**markdown**", "--append", "--markdown", "--tab", "Second"}, ctx, flags); err != nil {
+		t.Fatalf("write markdown append: %v", err)
+	}
+	if got := batchRequests[2][0].InsertText.Location; got.TabId != "t.second" || got.Index != 19 {
+		t.Fatalf("unexpected markdown append insert location: %#v", got)
+	}
+
 	if err := runKong(t, &DocsUpdateCmd{}, []string{"doc1", "--text", "!", "--tab", "t.second"}, ctx, flags); err != nil {
 		t.Fatalf("update append: %v", err)
 	}
-	if got := batchRequests[2][0].InsertText.Location; got.TabId != "t.second" || got.Index != 19 {
+	if got := batchRequests[3][0].InsertText.Location; got.TabId != "t.second" || got.Index != 19 {
 		t.Fatalf("unexpected update insert location: %#v", got)
 	}
 
 	if err := runKong(t, &DocsUpdateCmd{}, []string{"doc1", "--text", "?", "--index", "5", "--tab", "t.second"}, ctx, flags); err != nil {
 		t.Fatalf("update explicit index: %v", err)
 	}
-	if got := batchRequests[3][0].InsertText.Location; got.TabId != "t.second" || got.Index != 5 {
+	if got := batchRequests[4][0].InsertText.Location; got.TabId != "t.second" || got.Index != 5 {
 		t.Fatalf("unexpected indexed update location: %#v", got)
 	}
 
-	if includeTabsCalls != 4 {
-		t.Fatalf("expected 4 tab-aware GET calls, got %d", includeTabsCalls)
+	if includeTabsCalls != 5 {
+		t.Fatalf("expected 5 tab-aware GET calls, got %d", includeTabsCalls)
 	}
 }
 
@@ -198,6 +205,10 @@ func TestDocsEditingCommands_WithTab(t *testing.T) {
 	req := batchRequests[2][0].ReplaceAllText
 	if req == nil || req.TabsCriteria == nil || len(req.TabsCriteria.TabIds) != 1 || req.TabsCriteria.TabIds[0] != "t.second" {
 		t.Fatalf("unexpected tabs criteria: %#v", req)
+	}
+
+	if err := runKong(t, &DocsFindReplaceCmd{}, []string{"doc1", "old", "**new**", "--format", "markdown", "--tab", "Second"}, ctx, flags); err != nil {
+		t.Fatalf("find-replace markdown tab: %v", err)
 	}
 }
 

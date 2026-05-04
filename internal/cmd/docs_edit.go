@@ -187,8 +187,10 @@ func (c *DocsWriteCmd) writeMarkdown(ctx context.Context, flags *RootFlags, docI
 	if !c.Replace {
 		return usage("--markdown requires --replace or --append")
 	}
+	// Tab support for markdown replace is limited because Drive's markdown
+	// converter doesn't support tab-specific updates, so we skip tab support here.
 	if c.Tab != "" {
-		return usage("--markdown cannot be combined with --tab")
+		return usage("--markdown with --replace does not support --tab (Drive's markdown converter operates on entire documents)")
 	}
 
 	cleaned, images := extractMarkdownImages(content)
@@ -217,8 +219,8 @@ func (c *DocsWriteCmd) writeMarkdown(ctx context.Context, flags *RootFlags, docI
 		}
 	}
 	if len(images) > 0 {
-		if err := insertImagesIntoDocs(ctx, docsSvc, docID, images); err != nil {
-			cleanupDocsImagePlaceholders(ctx, docsSvc, docID, images)
+		if err := insertImagesIntoDocs(ctx, docsSvc, docID, images, ""); err != nil {
+			cleanupDocsImagePlaceholders(ctx, docsSvc, docID, images, "")
 			return fmt.Errorf("insert images: %w", err)
 		}
 	}
@@ -254,22 +256,19 @@ func (c *DocsWriteCmd) writeMarkdown(ctx context.Context, flags *RootFlags, docI
 }
 
 func (c *DocsWriteCmd) appendMarkdown(ctx context.Context, flags *RootFlags, docID, content string) error {
-	if c.Tab != "" {
-		return usage("--markdown cannot be combined with --tab")
-	}
-
 	svc, err := requireDocsService(ctx, flags)
 	if err != nil {
 		return err
 	}
 
-	endIndex, _, err := docsTargetEndIndexAndTabID(ctx, svc, docID, "")
+	endIndex, tabID, err := docsTargetEndIndexAndTabID(ctx, svc, docID, c.Tab)
 	if err != nil {
 		return err
 	}
+	c.Tab = tabID
 	insertIndex := docsAppendIndex(endIndex)
 
-	requestCount, inserted, err := insertDocsMarkdownAt(ctx, svc, docID, insertIndex, content)
+	requestCount, inserted, err := insertDocsMarkdownAt(ctx, svc, docID, insertIndex, content, c.Tab)
 	if err != nil {
 		if isDocsNotFound(err) {
 			return fmt.Errorf("doc not found or not a Google Doc (id=%s)", docID)
@@ -626,23 +625,24 @@ func (c *DocsFindReplaceCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 	c.Tab = tab
 
-	if c.Tab != "" && format == docsContentFormatMarkdown {
-		return usage("--tab is not yet supported with --format markdown")
-	}
-
 	svc, err := requireDocsService(ctx, flags)
 	if err != nil {
 		return err
 	}
 
-	if !c.First && format == docsContentFormatPlain {
-		if c.Tab != "" {
-			tabID, tabErr := resolveDocsTabID(ctx, svc, docID, c.Tab)
-			if tabErr != nil {
-				return tabErr
-			}
-			c.Tab = tabID
+	if c.Tab != "" {
+		tabID, tabErr := resolveDocsTabID(ctx, svc, docID, c.Tab)
+		if tabErr != nil {
+			return tabErr
 		}
+		c.Tab = tabID
+	}
+
+	if flags != nil && flags.DryRun {
+		return c.runDryRun(ctx, u, svc, docID, replaceText, format)
+	}
+
+	if !c.First && format == docsContentFormatPlain {
 		return c.runReplaceAll(ctx, u, svc, docID, replaceText)
 	}
 
@@ -708,6 +708,41 @@ func (c *DocsFindReplaceCmd) Run(ctx context.Context, flags *RootFlags) error {
 	return nil
 }
 
+func (c *DocsFindReplaceCmd) runDryRun(ctx context.Context, u *ui.UI, svc *docs.Service, docID, replaceText, format string) error {
+	loaded, err := loadDocsTargetDocument(ctx, svc, docID, c.Tab)
+	if err != nil {
+		return err
+	}
+	c.Tab = loaded.tabID
+
+	matches := findTextMatches(loaded.target, c.Find, c.MatchCase)
+	replacements := len(matches)
+	if c.First && replacements > 1 {
+		replacements = 1
+	}
+	remaining := len(matches) - replacements
+
+	payload := map[string]any{
+		"documentId":   docID,
+		"find":         c.Find,
+		"replace":      replaceText,
+		"format":       format,
+		"first":        c.First,
+		"replacements": replacements,
+		"remaining":    remaining,
+	}
+	if c.Tab != "" {
+		payload["tabId"] = c.Tab
+	}
+	if err := dryRunExit(ctx, &RootFlags{DryRun: true}, "docs.find-replace", payload); err != nil {
+		return err
+	}
+	if !outfmt.IsJSON(ctx) {
+		u.Out().Printf("matches\t%d", len(matches))
+	}
+	return nil
+}
+
 func (c *DocsFindReplaceCmd) runReplaceAll(ctx context.Context, u *ui.UI, svc *docs.Service, docID, replaceText string) error {
 	documentID, replacements, err := runDocsReplaceAll(ctx, svc, docID, c.Find, replaceText, c.MatchCase, c.Tab)
 	if err != nil {
@@ -742,7 +777,7 @@ func (c *DocsFindReplaceCmd) runPlain(ctx context.Context, svc *docs.Service, do
 }
 
 func (c *DocsFindReplaceCmd) runMarkdown(ctx context.Context, svc *docs.Service, doc *docs.Document, startIdx, endIdx int64, replaceText string) error {
-	return replaceDocsMarkdownRange(ctx, svc, doc, startIdx, endIdx, replaceText)
+	return replaceDocsMarkdownRange(ctx, svc, doc, startIdx, endIdx, replaceText, c.Tab)
 }
 
 func (c *DocsFindReplaceCmd) printFirstResult(ctx context.Context, u *ui.UI, docID, replaceText string, replacements, total int) error {

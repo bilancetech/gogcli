@@ -90,21 +90,25 @@ func runDocsReplaceAll(ctx context.Context, svc *docs.Service, docID, find, repl
 }
 
 func replaceDocsTextRange(ctx context.Context, svc *docs.Service, doc *docs.Document, startIdx, endIdx int64, replaceText, tabID string) error {
-	_, err := svc.Documents.BatchUpdate(doc.DocumentId, &docs.BatchUpdateDocumentRequest{
-		WriteControl: &docs.WriteControl{RequiredRevisionId: doc.RevisionId},
-		Requests: []*docs.Request{
-			{
-				DeleteContentRange: &docs.DeleteContentRangeRequest{
-					Range: &docs.Range{StartIndex: startIdx, EndIndex: endIdx, TabId: tabID},
-				},
-			},
-			{
-				InsertText: &docs.InsertTextRequest{
-					Location: &docs.Location{Index: startIdx, TabId: tabID},
-					Text:     replaceText,
-				},
+	requests := []*docs.Request{
+		{
+			DeleteContentRange: &docs.DeleteContentRangeRequest{
+				Range: &docs.Range{StartIndex: startIdx, EndIndex: endIdx, TabId: tabID},
 			},
 		},
+	}
+	if replaceText != "" {
+		requests = append(requests, &docs.Request{
+			InsertText: &docs.InsertTextRequest{
+				Location: &docs.Location{Index: startIdx, TabId: tabID},
+				Text:     replaceText,
+			},
+		})
+	}
+
+	_, err := svc.Documents.BatchUpdate(doc.DocumentId, &docs.BatchUpdateDocumentRequest{
+		WriteControl: &docs.WriteControl{RequiredRevisionId: doc.RevisionId},
+		Requests:     requests,
 	}).Context(ctx).Do()
 	if err != nil {
 		return fmt.Errorf("replace: %w", err)
@@ -112,26 +116,41 @@ func replaceDocsTextRange(ctx context.Context, svc *docs.Service, doc *docs.Docu
 	return nil
 }
 
-func replaceDocsMarkdownRange(ctx context.Context, svc *docs.Service, doc *docs.Document, startIdx, endIdx int64, replaceText string) error {
+func replaceDocsMarkdownRange(ctx context.Context, svc *docs.Service, doc *docs.Document, startIdx, endIdx int64, replaceText string, tabID string) error {
 	cleaned, images := extractMarkdownImages(replaceText)
 	elements := ParseMarkdown(cleaned)
-	formattingRequests, textToInsert, tables := MarkdownToDocsRequests(elements, startIdx)
+	formattingRequests, textToInsert, tables := MarkdownToDocsRequests(elements, startIdx, tabID)
+
+	for _, req := range formattingRequests {
+		if req.UpdateTextStyle != nil && req.UpdateTextStyle.Range != nil {
+			req.UpdateTextStyle.Range.TabId = tabID
+		}
+		if req.UpdateParagraphStyle != nil && req.UpdateParagraphStyle.Range != nil {
+			req.UpdateParagraphStyle.Range.TabId = tabID
+		}
+		if req.CreateParagraphBullets != nil && req.CreateParagraphBullets.Range != nil {
+			req.CreateParagraphBullets.Range.TabId = tabID
+		}
+		if req.DeleteParagraphBullets != nil && req.DeleteParagraphBullets.Range != nil {
+			req.DeleteParagraphBullets.Range.TabId = tabID
+		}
+	}
 
 	requests := make([]*docs.Request, 0, 2+len(formattingRequests))
-	requests = append(requests,
-		&docs.Request{
-			DeleteContentRange: &docs.DeleteContentRangeRequest{
-				Range: &docs.Range{StartIndex: startIdx, EndIndex: endIdx},
-			},
+	requests = append(requests, &docs.Request{
+		DeleteContentRange: &docs.DeleteContentRangeRequest{
+			Range: &docs.Range{StartIndex: startIdx, EndIndex: endIdx, TabId: tabID},
 		},
-		&docs.Request{
+	})
+	if textToInsert != "" {
+		requests = append(requests, &docs.Request{
 			InsertText: &docs.InsertTextRequest{
-				Location: &docs.Location{Index: startIdx},
+				Location: &docs.Location{Index: startIdx, TabId: tabID},
 				Text:     textToInsert,
 			},
-		},
-	)
-	requests = append(requests, formattingRequests...)
+		})
+		requests = append(requests, formattingRequests...)
+	}
 
 	_, err := svc.Documents.BatchUpdate(doc.DocumentId, &docs.BatchUpdateDocumentRequest{
 		WriteControl: &docs.WriteControl{RequiredRevisionId: doc.RevisionId},
@@ -146,7 +165,7 @@ func replaceDocsMarkdownRange(ctx context.Context, svc *docs.Service, doc *docs.
 		tableOffset := int64(0)
 		for _, table := range tables {
 			tableIndex := table.StartIndex + tableOffset
-			tableEnd, tableErr := tableInserter.InsertNativeTable(ctx, tableIndex, table.Cells)
+			tableEnd, tableErr := tableInserter.InsertNativeTable(ctx, tableIndex, table.Cells, tabID)
 			if tableErr != nil {
 				return fmt.Errorf("insert native table: %w", tableErr)
 			}
@@ -157,8 +176,8 @@ func replaceDocsMarkdownRange(ctx context.Context, svc *docs.Service, doc *docs.
 	}
 
 	if len(images) > 0 {
-		imgErr := insertImagesIntoDocs(ctx, svc, doc.DocumentId, images)
-		cleanupDocsImagePlaceholders(ctx, svc, doc.DocumentId, images)
+		imgErr := insertImagesIntoDocs(ctx, svc, doc.DocumentId, images, tabID)
+		cleanupDocsImagePlaceholders(ctx, svc, doc.DocumentId, images, tabID)
 		if imgErr != nil {
 			return fmt.Errorf("insert images: %w", imgErr)
 		}
@@ -167,18 +186,33 @@ func replaceDocsMarkdownRange(ctx context.Context, svc *docs.Service, doc *docs.
 	return nil
 }
 
-func insertDocsMarkdownAt(ctx context.Context, svc *docs.Service, docID string, insertIdx int64, content string) (requestCount int, inserted int, err error) {
+func insertDocsMarkdownAt(ctx context.Context, svc *docs.Service, docID string, insertIdx int64, content string, tabID string) (requestCount int, inserted int, err error) {
 	cleaned, images := extractMarkdownImages(content)
 	elements := ParseMarkdown(cleaned)
-	formattingRequests, textToInsert, tables := MarkdownToDocsRequests(elements, insertIdx)
+	formattingRequests, textToInsert, tables := MarkdownToDocsRequests(elements, insertIdx, tabID)
 	if textToInsert == "" {
 		return 0, 0, nil
+	}
+
+	for _, req := range formattingRequests {
+		if req.UpdateTextStyle != nil && req.UpdateTextStyle.Range != nil {
+			req.UpdateTextStyle.Range.TabId = tabID
+		}
+		if req.UpdateParagraphStyle != nil && req.UpdateParagraphStyle.Range != nil {
+			req.UpdateParagraphStyle.Range.TabId = tabID
+		}
+		if req.CreateParagraphBullets != nil && req.CreateParagraphBullets.Range != nil {
+			req.CreateParagraphBullets.Range.TabId = tabID
+		}
+		if req.DeleteParagraphBullets != nil && req.DeleteParagraphBullets.Range != nil {
+			req.DeleteParagraphBullets.Range.TabId = tabID
+		}
 	}
 
 	requests := make([]*docs.Request, 0, 1+len(formattingRequests))
 	requests = append(requests, &docs.Request{
 		InsertText: &docs.InsertTextRequest{
-			Location: &docs.Location{Index: insertIdx},
+			Location: &docs.Location{Index: insertIdx, TabId: tabID},
 			Text:     textToInsert,
 		},
 	})
@@ -196,7 +230,7 @@ func insertDocsMarkdownAt(ctx context.Context, svc *docs.Service, docID string, 
 		tableOffset := int64(0)
 		for _, table := range tables {
 			tableIndex := table.StartIndex + tableOffset
-			tableEnd, tableErr := tableInserter.InsertNativeTable(ctx, tableIndex, table.Cells)
+			tableEnd, tableErr := tableInserter.InsertNativeTable(ctx, tableIndex, table.Cells, tabID)
 			if tableErr != nil {
 				return len(requests), len(textToInsert), fmt.Errorf("insert native table: %w", tableErr)
 			}
@@ -207,8 +241,8 @@ func insertDocsMarkdownAt(ctx context.Context, svc *docs.Service, docID string, 
 	}
 
 	if len(images) > 0 {
-		imgErr := insertImagesIntoDocs(ctx, svc, docID, images)
-		cleanupDocsImagePlaceholders(ctx, svc, docID, images)
+		imgErr := insertImagesIntoDocs(ctx, svc, docID, images, tabID)
+		cleanupDocsImagePlaceholders(ctx, svc, docID, images, tabID)
 		if imgErr != nil {
 			return len(requests), len(textToInsert), fmt.Errorf("insert images: %w", imgErr)
 		}
@@ -217,10 +251,10 @@ func insertDocsMarkdownAt(ctx context.Context, svc *docs.Service, docID string, 
 	return len(requests), len(textToInsert), nil
 }
 
-func cleanupDocsImagePlaceholders(ctx context.Context, svc *docs.Service, docID string, images []markdownImage) {
+func cleanupDocsImagePlaceholders(ctx context.Context, svc *docs.Service, docID string, images []markdownImage, tabID string) {
 	reqs := make([]*docs.Request, 0, len(images))
 	for _, img := range images {
-		reqs = append(reqs, &docs.Request{
+		req := &docs.Request{
 			ReplaceAllText: &docs.ReplaceAllTextRequest{
 				ContainsText: &docs.SubstringMatchCriteria{
 					Text:      img.placeholder(),
@@ -228,7 +262,11 @@ func cleanupDocsImagePlaceholders(ctx context.Context, svc *docs.Service, docID 
 				},
 				ReplaceText: "",
 			},
-		})
+		}
+		if tabID != "" {
+			req.ReplaceAllText.TabsCriteria = &docs.TabsCriteria{TabIds: []string{tabID}}
+		}
+		reqs = append(reqs, req)
 	}
 	_, _ = svc.Documents.BatchUpdate(docID, &docs.BatchUpdateDocumentRequest{
 		Requests: reqs,

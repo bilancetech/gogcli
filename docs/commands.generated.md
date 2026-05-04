@@ -71,7 +71,7 @@ Generated from `gog schema --json`.
 - `gog calendar (cal) create-calendar (new-calendar) <summary> [flags]` - Create a new secondary calendar
 - `gog calendar (cal) delete (rm,del,remove) <calendarId> <eventId> [flags]` - Delete an event
 - `gog calendar (cal) event (get,info,show) <calendarId> <eventId>` - Get event
-- `gog calendar (cal) events (list,ls) [<calendarId>] [flags]` - List events from a calendar or all calendars
+- `gog calendar (cal) events (list,ls) [<calendarId> ...] [flags]` - List events from a calendar or all calendars
 - `gog calendar (cal) focus-time (focus) --from=STRING --to=STRING [<calendarId>] [flags]` - Create a Focus Time block
 - `gog calendar (cal) freebusy [<calendarIds>] [flags]` - Get free/busy
 - `gog calendar (cal) out-of-office (ooo) --from=STRING --to=STRING [<calendarId>] [flags]` - Create an Out of Office event
@@ -202,6 +202,7 @@ Generated from `gog schema --json`.
 - `gog contacts (contact) search <query> ... [flags]` - Search contacts by name/email/phone
 - `gog contacts (contact) update (edit,set) <resourceName> [flags]` - Update a contact
 - `gog docs (doc) <command> [flags]` - Google Docs (export via Drive)
+- `gog docs (doc) add-tab <docId> [flags]` - Add a tab to a Google Doc
 - `gog docs (doc) cat (text,read) <docId> [flags]` - Print a Google Doc as plain text
 - `gog docs (doc) clear <docId>` - Clear all content from a Google Doc
 - `gog docs (doc) comments <command>` - Manage comments on files
@@ -214,12 +215,14 @@ Generated from `gog schema --json`.
 - `gog docs (doc) copy (cp,duplicate) <docId> <title> [flags]` - Copy a Google Doc
 - `gog docs (doc) create (add,new) <title> [flags]` - Create a Google Doc
 - `gog docs (doc) delete --start=INT-64 --end=INT-64 <docId> [flags]` - Delete text range from document
+- `gog docs (doc) delete-tab <docId> [flags]` - Delete a tab from a Google Doc
 - `gog docs (doc) edit <docId> <find> <replace> [flags]` - Find and replace text in a Google Doc
 - `gog docs (doc) export (download,dl) <docId> [flags]` - Export a Google Doc (pdf|docx|txt|md|html)
 - `gog docs (doc) find-replace <docId> <find> [<replace>] [flags]` - Find and replace text. Supports plain text or markdown with images; use --first for a single occurrence.
 - `gog docs (doc) info (get,show) <docId>` - Get Google Doc metadata
 - `gog docs (doc) insert <docId> [<content>] [flags]` - Insert text at a specific position
 - `gog docs (doc) list-tabs <docId>` - List all tabs in a Google Doc
+- `gog docs (doc) rename-tab <docId> [flags]` - Rename a tab in a Google Doc
 - `gog docs (doc) sed <docId> [<expression>] [flags]` - Regex find/replace (sed-style: s/pattern/replacement/g)
 - `gog docs (doc) structure (struct) <docId> [flags]` - Show document structure with numbered paragraphs
 - `gog docs (doc) update <docId> [flags]` - Insert text at a specific index in a Google Doc
