@@ -186,6 +186,7 @@ sheets:
   add-tab: true
   rename-tab: true
   delete-tab: false
+  batch-update: false
   chart:
     list: true
     get: true

@@ -1237,6 +1237,7 @@ gog sheets links <spreadsheetId> 'Sheet1!A1:B10'
 gog sheets add-tab <spreadsheetId> <tabName> --index 0
 gog sheets rename-tab <spreadsheetId> <oldName> <newName>
 gog sheets delete-tab <spreadsheetId> <tabName> --force
+gog sheets batch-update <spreadsheetId> --requests-json @requests.json --force  # Raw batchUpdate requests (JSON array)
 gog sheets raw <spreadsheetId>                       # Lossless JSON dump of Spreadsheets.Get
 gog sheets raw <spreadsheetId> --include-grid-data   # Include cell-level data (off by default)
 
