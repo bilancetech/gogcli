@@ -52,6 +52,7 @@ type SheetsCmd struct {
 	AddTab        SheetsAddTabCmd        `cmd:"" name:"add-tab" aliases:"add-sheet" help:"Add a new tab/sheet to a spreadsheet"`
 	RenameTab     SheetsRenameTabCmd     `cmd:"" name:"rename-tab" aliases:"rename-sheet" help:"Rename a tab/sheet in a spreadsheet"`
 	DeleteTab     SheetsDeleteTabCmd     `cmd:"" name:"delete-tab" aliases:"delete-sheet" help:"Delete a tab/sheet from a spreadsheet (use --force to skip confirmation)"`
+	BatchUpdate   SheetsBatchUpdateCmd   `cmd:"" name:"batch-update" help:"Send raw Sheets API batchUpdate requests from JSON (use --force to skip confirmation)"`
 }
 
 type SheetsExportCmd struct {
