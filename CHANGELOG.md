@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.15.1 - 2026-10-07
+
+### Added
+- Sheets: add `sheets batch-update` for raw Sheets API batchUpdate requests from JSON (inline, `@file`, or stdin). Sends the JSON unchanged so zero values survive, supports `--dry-run`, asks for confirmation unless `--force`, and is blocked in the `readonly` and `agent-safe` safety profiles. (#1)
+
 ## 0.15.0 - 2026-05-04
 
 ### Added
