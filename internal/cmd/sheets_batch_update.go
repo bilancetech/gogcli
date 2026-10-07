@@ -59,7 +59,7 @@ func (c *SheetsBatchUpdateCmd) Run(ctx context.Context, flags *RootFlags) error 
 	var requests []*sheets.Request
 	dec := json.NewDecoder(bytes.NewReader(b))
 	dec.DisallowUnknownFields()
-	if err := dec.Decode(&requests); err != nil {
+	if err = dec.Decode(&requests); err != nil {
 		return fmt.Errorf("invalid --requests-json: %w", err)
 	}
 	if len(requests) == 0 {
@@ -70,7 +70,7 @@ func (c *SheetsBatchUpdateCmd) Run(ctx context.Context, flags *RootFlags) error 
 		"spreadsheet_id": spreadsheetID,
 		"requests":       json.RawMessage(b),
 	}
-	if err := dryRunAndConfirmDestructive(ctx, flags, "sheets.batch-update", payload, fmt.Sprintf("apply %d batchUpdate request(s) to spreadsheet %s", len(requests), spreadsheetID)); err != nil {
+	if err = dryRunAndConfirmDestructive(ctx, flags, "sheets.batch-update", payload, fmt.Sprintf("apply %d batchUpdate request(s) to spreadsheet %s", len(requests), spreadsheetID)); err != nil {
 		return err
 	}
 
@@ -97,7 +97,7 @@ func (c *SheetsBatchUpdateCmd) Run(ctx context.Context, flags *RootFlags) error 
 		return err
 	}
 	defer resp.Body.Close()
-	if err := gapi.CheckResponse(resp); err != nil {
+	if err = gapi.CheckResponse(resp); err != nil {
 		return err
 	}
 	out, err := io.ReadAll(resp.Body)
@@ -105,7 +105,7 @@ func (c *SheetsBatchUpdateCmd) Run(ctx context.Context, flags *RootFlags) error 
 		return err
 	}
 	var compact bytes.Buffer
-	if err := json.Compact(&compact, out); err != nil {
+	if err = json.Compact(&compact, out); err != nil {
 		return fmt.Errorf("decode batchUpdate response: %w", err)
 	}
 	compact.WriteByte('\n')
