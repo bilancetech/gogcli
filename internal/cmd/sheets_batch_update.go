@@ -5,17 +5,35 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+	"net/url"
 	"os"
 	"strings"
 
+	gapi "google.golang.org/api/googleapi"
 	"google.golang.org/api/sheets/v4"
 
-	"github.com/steipete/gogcli/internal/outfmt"
+	"github.com/steipete/gogcli/internal/googleapi"
+	"github.com/steipete/gogcli/internal/googleauth"
 )
+
+// sheetsBatchUpdateBaseURL is swapped in tests.
+var sheetsBatchUpdateBaseURL = "https://sheets.googleapis.com/v4/spreadsheets/"
+
+// newSheetsHTTPClient is swapped in tests to avoid real auth.
+var newSheetsHTTPClient = func(ctx context.Context, email string) (*http.Client, error) {
+	return googleapi.NewHTTPClient(ctx, googleauth.ServiceSheets, email)
+}
 
 // SheetsBatchUpdateCmd sends an arbitrary list of Sheets API batchUpdate
 // requests (deleteDimension, duplicateSheet, updateSheetProperties, ...) and
 // prints the raw response.
+//
+// The requests JSON is decoded into the Sheets Go types only to validate it;
+// the original bytes are what gets sent. Round-tripping through the Go types
+// would drop zero values (index 0, numberValue 0, startIndex 0) because of
+// omitempty.
 //
 // REST reference: https://developers.google.com/sheets/api/reference/rest/v4/spreadsheets/batchUpdate
 type SheetsBatchUpdateCmd struct {
@@ -50,20 +68,47 @@ func (c *SheetsBatchUpdateCmd) Run(ctx context.Context, flags *RootFlags) error 
 
 	payload := map[string]any{
 		"spreadsheet_id": spreadsheetID,
-		"requests":       requests,
+		"requests":       json.RawMessage(b),
 	}
 	if err := dryRunAndConfirmDestructive(ctx, flags, "sheets.batch-update", payload, fmt.Sprintf("apply %d batchUpdate request(s) to spreadsheet %s", len(requests), spreadsheetID)); err != nil {
 		return err
 	}
 
-	_, svc, err := requireSheetsService(ctx, flags)
+	account, err := requireAccount(flags)
+	if err != nil {
+		return err
+	}
+	client, err := newSheetsHTTPClient(ctx, account)
 	if err != nil {
 		return err
 	}
 
-	resp, err := svc.Spreadsheets.BatchUpdate(spreadsheetID, &sheets.BatchUpdateSpreadsheetRequest{Requests: requests}).Context(ctx).Do()
+	body, err := json.Marshal(map[string]json.RawMessage{"requests": b})
 	if err != nil {
 		return err
 	}
-	return outfmt.WriteRaw(ctx, os.Stdout, resp, outfmt.RawOptions{})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, sheetsBatchUpdateBaseURL+url.PathEscape(spreadsheetID)+":batchUpdate", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if err := gapi.CheckResponse(resp); err != nil {
+		return err
+	}
+	out, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+	var compact bytes.Buffer
+	if err := json.Compact(&compact, out); err != nil {
+		return fmt.Errorf("decode batchUpdate response: %w", err)
+	}
+	compact.WriteByte('\n')
+	_, err = os.Stdout.Write(compact.Bytes())
+	return err
 }

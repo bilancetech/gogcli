@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -34,6 +35,14 @@ func newSheetsBatchUpdateTestServer(t *testing.T, gotBody *map[string]any, hits 
 	}))
 }
 
+func installMockSheetsBatchUpdate(t *testing.T, srv *httptest.Server) {
+	t.Helper()
+	origURL, origClient := sheetsBatchUpdateBaseURL, newSheetsHTTPClient
+	t.Cleanup(func() { sheetsBatchUpdateBaseURL, newSheetsHTTPClient = origURL, origClient })
+	sheetsBatchUpdateBaseURL = srv.URL + "/v4/spreadsheets/"
+	newSheetsHTTPClient = func(context.Context, string) (*http.Client, error) { return srv.Client(), nil }
+}
+
 const sheetsBatchUpdateRequests = `[
   {"deleteDimension": {"range": {"sheetId": 7, "dimension": "COLUMNS", "startIndex": 4, "endIndex": 91}}},
   {"duplicateSheet": {"sourceSheetId": 7, "insertSheetIndex": 1, "newSheetName": "Copy"}},
@@ -45,7 +54,7 @@ func TestSheetsBatchUpdate_SendsRequestsAndPrintsResponse(t *testing.T) {
 	var hits atomic.Int32
 	srv := newSheetsBatchUpdateTestServer(t, &got, &hits)
 	defer srv.Close()
-	installMockSheetsService(t, srv)
+	installMockSheetsBatchUpdate(t, srv)
 
 	flags := &RootFlags{Account: "a@b.com", Force: true}
 	out := captureStdout(t, func() {
@@ -93,7 +102,7 @@ func TestSheetsBatchUpdate_DryRunAvoidsMutation(t *testing.T) {
 	var hits atomic.Int32
 	srv := newSheetsBatchUpdateTestServer(t, &got, &hits)
 	defer srv.Close()
-	installMockSheetsService(t, srv)
+	installMockSheetsBatchUpdate(t, srv)
 
 	flags := &RootFlags{Account: "a@b.com", DryRun: true}
 	_ = captureStdout(t, func() {
@@ -101,5 +110,32 @@ func TestSheetsBatchUpdate_DryRunAvoidsMutation(t *testing.T) {
 	})
 	if hits.Load() != 0 {
 		t.Fatalf("dry-run sent %d batchUpdate call(s)", hits.Load())
+	}
+}
+
+func TestSheetsBatchUpdate_KeepsZeroValues(t *testing.T) {
+	var got map[string]any
+	var hits atomic.Int32
+	srv := newSheetsBatchUpdateTestServer(t, &got, &hits)
+	defer srv.Close()
+	installMockSheetsBatchUpdate(t, srv)
+
+	reqs := `[
+  {"updateSheetProperties": {"properties": {"sheetId": 7, "index": 0}, "fields": "index"}},
+  {"deleteDimension": {"range": {"sheetId": 7, "dimension": "ROWS", "startIndex": 0, "endIndex": 1}}},
+  {"updateCells": {"start": {"sheetId": 7, "rowIndex": 0, "columnIndex": 0}, "rows": [{"values": [{"userEnteredValue": {"numberValue": 0}}]}], "fields": "userEnteredValue"}}
+]`
+	flags := &RootFlags{Account: "a@b.com", Force: true}
+	_ = captureStdout(t, func() {
+		if err := runKong(t, &SheetsBatchUpdateCmd{}, []string{"s1", "--requests-json", reqs}, rawTestContext(t), flags); err != nil {
+			t.Fatalf("run: %v", err)
+		}
+	})
+
+	body, _ := json.Marshal(got)
+	for _, want := range []string{`"index":0`, `"startIndex":0`, `"numberValue":0`, `"rowIndex":0`, `"columnIndex":0`} {
+		if !strings.Contains(string(body), want) {
+			t.Fatalf("outgoing body lost %s: %s", want, body)
+		}
 	}
 }
